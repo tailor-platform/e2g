@@ -60,3 +60,19 @@ jobs:
         with:
           name: test-results-${{ matrix.playwright }}
           path: test-results
+
+  # The ruleset requires this one context, so matrix values can change without touching it.
+  ci:
+    needs: [check, browser]
+    if: always()
+    runs-on: ubuntu-latest
+    permissions: {}
+    timeout-minutes: 5
+    steps:
+      - name: Check results
+        env:
+          CHECK: ${{ needs.check.result }}
+          BROWSER: ${{ needs.browser.result }}
+        run: |
+          echo "check=$CHECK browser=$BROWSER"
+          [[ "$CHECK" == "success" && "$BROWSER" == "success" ]]
