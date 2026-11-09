@@ -1,6 +1,6 @@
 {
   "name": "@tailor-platform/e2g",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Guides generated from your e2e tests",
   "keywords": [
     "documentation",
