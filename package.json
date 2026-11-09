@@ -1,0 +1,89 @@
+{
+  "name": "@tailor-platform/e2g",
+  "version": "0.0.0",
+  "description": "Guides generated from your e2e tests",
+  "keywords": [
+    "documentation",
+    "e2e",
+    "guides",
+    "playwright",
+    "reporter",
+    "screenshots"
+  ],
+  "homepage": "https://github.com/tailor-platform/e2g#readme",
+  "bugs": {
+    "url": "https://github.com/tailor-platform/e2g/issues"
+  },
+  "license": "MIT",
+  "author": "Tailor Inc.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tailor-platform/e2g.git"
+  },
+  "files": [
+    "dist"
+  ],
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./markdown": {
+      "types": "./dist/markdown.d.ts",
+      "default": "./dist/markdown.js"
+    },
+    "./playwright": {
+      "types": "./dist/playwright/index.d.ts",
+      "default": "./dist/playwright/index.js"
+    },
+    "./playwright/reporter": {
+      "types": "./dist/playwright/reporter/index.d.ts",
+      "default": "./dist/playwright/reporter/index.js"
+    }
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "test": "vitest run",
+    "test:browser": "playwright test",
+    "typecheck": "tsc -p . && tsc -p test/types/one && tsc -p test/types/two && tsc -p test/fixture-project.tsconfig.json && tsc -p test/readme",
+    "lint": "oxlint --deny-warnings && oxfmt --check",
+    "check:pkg": "publint && attw --pack . --profile esm-only",
+    "changeset": "changeset",
+    "release": "pnpm build && changeset publish"
+  },
+  "dependencies": {
+    "pngjs": "7.0.0"
+  },
+  "devDependencies": {
+    "@arethetypeswrong/cli": "0.18.5",
+    "@changesets/changelog-github": "1.0.1",
+    "@changesets/cli": "3.0.3",
+    "@playwright/test": "1.64.1",
+    "@types/node": "26.6.5",
+    "@types/pngjs": "6.0.5",
+    "oxfmt": "0.73.0",
+    "oxlint": "1.88.0",
+    "publint": "0.3.25",
+    "typescript": "7.0.2",
+    "vitest": "5.0.5",
+    "yaml": "2.9.1"
+  },
+  "peerDependencies": {
+    "@playwright/test": ">=1.64"
+  },
+  "peerDependenciesMeta": {
+    "@playwright/test": {
+      "optional": true
+    }
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "packageManager": "pnpm@12.6.0"
+}
