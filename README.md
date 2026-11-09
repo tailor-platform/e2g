@@ -4,6 +4,7 @@ Your e2e tests are your user guides. Write a flow once as a test, and get a numb
 
 [![CI](https://github.com/tailor-platform/e2g/actions/workflows/ci.yml/badge.svg)](https://github.com/tailor-platform/e2g/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![npm](https://img.shields.io/npm/v/@tailor-platform/e2g.svg)](https://www.npmjs.com/package/@tailor-platform/e2g)
 ![Node.js 22+](https://img.shields.io/badge/node-%3E%3D22-339933.svg)
 ![ESM only](https://img.shields.io/badge/module-ESM-f7df1e.svg)
 ![Playwright 1.64+](https://img.shields.io/badge/playwright-%3E%3D1.64-2EAD33.svg)
@@ -144,21 +145,9 @@ The two PNGs land in `docs/assets/guides/en/invite-a-teammate/`, the button outl
 
 ### 1. Install
 
-The package is not published to npm. Build it from source and install the tarball:
-
 ```sh
-git clone https://github.com/tailor-platform/e2g.git
-cd e2g
-pnpm install && pnpm build && npm pack
+npm i -D @tailor-platform/e2g yaml
 ```
-
-Then, in your project:
-
-```sh
-npm i -D ./path/to/tailor-platform-e2g-0.0.0.tgz yaml
-```
-
-In a monorepo, you can instead add it as a workspace package and depend on it with `"@tailor-platform/e2g": "workspace:*"`.
 
 Requires Node.js 22 or later and `@playwright/test` 1.64 or later as a peer dependency. The package is ESM only. `yaml` is only used by the output in step 4; use whatever you like there.
 
