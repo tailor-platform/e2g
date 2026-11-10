@@ -79,6 +79,7 @@ test("choose a plan", guidePage("choose-a-plan", meta), async ({ page, guide, gu
       highlight: [page.getByTestId("plan-pro"), page.getByTestId("plan-team")],
       crop: page.getByTestId("plans"),
       mask: [page.getByTestId("card-number")],
+      hide: [page.getByRole("listitem").filter({ hasText: /^test-/ })],
       style: ".promo-banner { display: none; }",
       highlightStyle: "outline: 3px dashed #0a84ff; outline-offset: 2px",
       padding: 24,

@@ -1,4 +1,4 @@
-import type { Locator, Page, PageScreenshotOptions } from "@playwright/test";
+import type { ElementHandle, Locator, Page, PageScreenshotOptions } from "@playwright/test";
 import type { Text } from "../types.js";
 import { SHOT_DEFAULTS, type GuideShotSettings } from "./use.js";
 
@@ -16,6 +16,7 @@ export interface ShotOptions {
   highlight?: Locator | Locator[];
   crop?: Locator;
   mask?: Locator[];
+  hide?: Locator[];
   style?: string;
   highlightStyle?: string;
   padding?: number;
@@ -25,6 +26,7 @@ export interface TakeShotOptions {
   highlight: Locator[];
   crop?: Locator;
   mask?: Locator[];
+  hide?: Locator[];
   highlightStyle: string;
   padding: number;
   style: string;
@@ -48,8 +50,51 @@ async function paddedClip(boxes: Locator[], padding: number) {
   return { x: left, y: top, width: right - left, height: bottom - top };
 }
 
+// Hidden through each element's own style, not a stylesheet: a page's CSP may
+// block an injected <style>, a document's stylesheet does not reach shadow roots
+// or frames, and the screenshot's style applies only after the crop is measured.
+// A hide locator may match no element or several, unlike a highlight. The same
+// elements are restored, in reverse so an element matched twice gets its own
+// display back, even if the locators match other elements by then.
+async function conceal(hide: Locator[]): Promise<() => Promise<void>> {
+  // hide locators point at elements, which carry a style
+  const handles = (
+    await Promise.all(hide.map((l) => l.elementHandles()))
+  ).flat() as ElementHandle<HTMLElement>[];
+  const hidden: { handle: ElementHandle<HTMLElement>; display: string; styled: boolean }[] = [];
+  const restore = async () => {
+    for (const { handle, display, styled } of hidden.reverse()) {
+      await handle.evaluate(
+        (el, [display, styled]) => {
+          el.style.display = display as string;
+          // leave no empty style attribute on an element that had none
+          if (!styled && el.getAttribute("style") === "") el.removeAttribute("style");
+        },
+        [display, styled] as const,
+      );
+    }
+    await Promise.all(handles.map((handle) => handle.dispose()));
+  };
+  try {
+    for (const handle of handles) {
+      const before = await handle.evaluate((el) => {
+        const styled = el.hasAttribute("style");
+        const { style } = el;
+        const display = style.display;
+        style.display = "none";
+        return { display, styled };
+      });
+      hidden.push({ handle, ...before });
+    }
+  } catch (error) {
+    await restore();
+    throw error;
+  }
+  return restore;
+}
+
 export async function takeShot(page: Page, opts: TakeShotOptions): Promise<Buffer> {
-  const { highlight, crop, mask } = opts;
+  const { highlight, crop, mask, hide = [] } = opts;
   const options: PageScreenshotOptions = {
     ...opts.screenshot,
     mask,
@@ -64,9 +109,10 @@ export async function takeShot(page: Page, opts: TakeShotOptions): Promise<Buffe
         ),
       ),
     );
-
   await mark(true);
+  let restore: (() => Promise<void>) | undefined;
   try {
+    restore = await conceal(hide);
     return crop
       ? await page.screenshot({
           ...options,
@@ -75,6 +121,7 @@ export async function takeShot(page: Page, opts: TakeShotOptions): Promise<Buffe
         })
       : await page.screenshot(options);
   } finally {
+    await restore?.();
     await mark(false);
   }
 }
@@ -94,6 +141,7 @@ export function captureShot(
     highlight: [opts.highlight ?? []].flat(),
     crop: opts.crop,
     mask: opts.mask,
+    hide: opts.hide,
     highlightStyle: opts.highlightStyle ?? settings.highlight,
     padding: opts.padding ?? settings.padding,
     style: [settings.style, opts.style].filter(Boolean).join("\n"),

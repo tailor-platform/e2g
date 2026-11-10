@@ -564,6 +564,62 @@ test.describe("captureShot", () => {
     expect(pixel(png, 2, 700)).toEqual([0, 128, 0]);
   });
 
+  test("hidden elements leave the shot and come back as they were", async ({ page }) => {
+    const card = page.locator("#card");
+    const note = page.locator("#note");
+    await note.evaluate((el) => (el.style.display = "inline-block"));
+    const box = (await card.boundingBox())!;
+    const png = await capture(page, {
+      // the card is matched twice, and #missing matches nothing
+      hide: [card, page.locator("#card, #missing")],
+      style: "#note{background:rgb(0,0,200)!important}",
+    });
+    // the note moves into the card's place
+    expect(pixel(png, box.x + box.width / 2, box.y + box.height / 2)).toEqual([0, 0, 200]);
+    await expect(card).toBeVisible();
+    expect(await card.evaluate((el) => el.style.display)).toBe("");
+    await page.evaluate(() =>
+      document.body.append(Object.assign(document.createElement("p"), { id: "plain" })),
+    );
+    await capture(page, { hide: [note, page.locator("#plain")] });
+    expect(await note.evaluate((el) => el.style.display)).toBe("inline-block");
+    // an element without a style attribute is left without one
+    expect(await page.locator("#plain").getAttribute("style")).toBeNull();
+  });
+
+  test("hide reaches into a shadow root", async ({ page }) => {
+    await page.evaluate(() => {
+      const host = document.createElement("div");
+      host.attachShadow({ mode: "open" }).innerHTML =
+        '<div id="shadowed" style="width:200px;height:80px;background:rgb(0,0,200)"></div>';
+      document.body.prepend(host);
+    });
+    const shadowed = page.locator("#shadowed");
+    const box = (await shadowed.boundingBox())!;
+    const png = await capture(page, { hide: [shadowed] });
+    expect(pixel(png, box.x + box.width / 2, box.y + box.height / 2)).not.toEqual([0, 0, 200]);
+    await expect(shadowed).toBeVisible();
+  });
+
+  test("a hide locator may match several elements, and the crop is measured without them", async ({
+    page,
+  }) => {
+    const buttons = page.getByRole("button");
+    const card = page.locator("#card");
+    const png = await capture(page, {
+      hide: [buttons],
+      crop: card,
+      padding: 0,
+      style: "#card{background:rgb(0,0,200)!important}",
+    });
+    // measured before hiding, the crop would land where the card was: on the note
+    const box = (await card.boundingBox())!;
+    expect(Math.abs(png.readUInt32BE(16) - box.width)).toBeLessThanOrEqual(1);
+    expect(pixel(png, box.width / 2, box.height / 2)).toEqual([0, 0, 200]);
+    await expect(buttons).toHaveCount(2);
+    for (const button of await buttons.all()) await expect(button).toBeVisible();
+  });
+
   test("two highlights are both outlined and inside the crop", async ({ page }) => {
     const save = page.getByRole("button", { name: "Save changes" });
     const publish = page.getByRole("button", { name: "Publish" });
