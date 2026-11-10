@@ -815,6 +815,7 @@ guideShot: {
 - **Attachments reach other reporters.** Shots are ordinary step attachments, so an html or blob reporter in the guides config stores them too. Your normal config attaches nothing.
 - **`.only` cannot be detected by a reporter.** A `.only` makes the guides outside it look absent, so the guides config requires `forbidOnly: true`.
 - **A caught error does not remove a step.** If the test catches an error thrown inside a `guide.step` and still passes, that step stays in the page.
+- **`hide` sets each element's inline `display`.** It works under a strict CSP and inside shadow roots and frames, and puts the old value back after the shot, but a page rule with `display: ... !important` wins over it. Hide such an element with `style` instead.
 - **PNG only.** Screenshots are compared pixel by pixel to ignore rendering noise, which lossy formats would defeat. `type` and `quality` cannot be set.
 - **No sharding or merged reports.** A sharded run is partial and writes nothing; generate the docs in a single run.
 
