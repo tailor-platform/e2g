@@ -133,7 +133,7 @@ The two PNGs land in `docs/assets/guides/en/invite-a-teammate/`, the button outl
 - **Plain Playwright tests.** `guidePage()` returns the test's details (a tag and an annotation), and `guide` is a fixture, so a guide is a `test()` like any other, with your fixtures, hooks and page objects. Only `guide.step`s become numbered steps; `test.step`s and the steps of your page objects stay out of the page.
 - **One test, every locale, checked by the compiler.** Each locale is a project with `use.guideLocale`. Register your locales once, and every step, paragraph and alt text must have all of them, or it is a type error. Playwright does not type-check your tests, so run `tsc --noEmit` in CI to catch a missing translation.
 - **Any number of screenshots per step.** Each image sits under the instruction it illustrates, and in guide runs `guide.shot` fails if the elements it points at are not visible.
-- **Highlight, crop and mask.** Outline elements with CSS, crop to a region with padding that keeps the outline, mask sensitive values, and add CSS per shot.
+- **Highlight, crop, mask and hide.** Outline elements with CSS, crop to a region with padding that keeps the outline, mask sensitive values, leave out elements other tests created, and add CSS per shot.
 - **A stable clock.** Guide runs freeze `Date.now()` before the first page opens in tests whose `test` comes from `guideTest` (directly or merged), so "5 minutes ago" and today's date do not change every image.
 - **Reports point at your code.** A failing `guide.step` is reported at the line that called it, not inside this package.
 - **Screenshot comparison that ignores rendering noise.** A new PNG that differs from the committed one only by anti-aliasing is not written, so reruns do not churn your git history.
@@ -452,16 +452,17 @@ Records a screenshot for the running `guide.step` (`guide.shot() must be called 
 
 In a guides run, `guide.shot` waits for `highlight` and `crop` to be visible, so a guide whose UI changed fails as a test, and records the name and `alt`. The PNG itself is taken only when `guideShots` is on. In a normal e2e run, `guide.shot` only checks its arguments.
 
-| Option           | Type                   | Default               | Meaning                                                                                                           |
-| ---------------- | ---------------------- | --------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `alt`            | `Text`                 | required              | Alt text of the image.                                                                                            |
-| `page`           | `Page`                 | the test's `page`     | The page to shoot, such as a popup.                                                                               |
-| `highlight`      | `Locator \| Locator[]` | none                  | Elements to outline with `highlightStyle`.                                                                        |
-| `crop`           | `Locator`              | whole viewport        | Crop to this element and the highlighted ones, plus `padding`. Taken from the full page, so it may be off screen. |
-| `mask`           | `Locator[]`            | none                  | Passed to Playwright's `mask`, for emails, tokens and other values that change.                                   |
-| `style`          | `string`               | none                  | CSS added for this shot only, after `guideShot.style`.                                                            |
-| `highlightStyle` | `string`               | `guideShot.highlight` | CSS declarations for the highlight of this shot.                                                                  |
-| `padding`        | `number`               | `guideShot.padding`   | Space around the crop in CSS pixels.                                                                              |
+| Option           | Type                   | Default               | Meaning                                                                                                                                                                                                                                                            |
+| ---------------- | ---------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `alt`            | `Text`                 | required              | Alt text of the image.                                                                                                                                                                                                                                             |
+| `page`           | `Page`                 | the test's `page`     | The page to shoot, such as a popup.                                                                                                                                                                                                                                |
+| `highlight`      | `Locator \| Locator[]` | none                  | Elements to outline with `highlightStyle`.                                                                                                                                                                                                                         |
+| `crop`           | `Locator`              | whole viewport        | Crop to this element and the highlighted ones, plus `padding`. Taken from the full page, so it may be off screen.                                                                                                                                                  |
+| `mask`           | `Locator[]`            | none                  | Passed to Playwright's `mask`, for emails, tokens and other values that change.                                                                                                                                                                                    |
+| `hide`           | `Locator[]`            | none                  | Left out of the shot with `display: none`, and the crop is measured without them. Each locator may match no element or several. For elements chosen by their content, such as rows other tests or earlier runs created; hide fixed parts of the page with `style`. |
+| `style`          | `string`               | none                  | CSS added for this shot only, after `guideShot.style`.                                                                                                                                                                                                             |
+| `highlightStyle` | `string`               | `guideShot.highlight` | CSS declarations for the highlight of this shot.                                                                                                                                                                                                                   |
+| `padding`        | `number`               | `guideShot.padding`   | Space around the crop in CSS pixels.                                                                                                                                                                                                                               |
 
 ```ts
 await guide.shot("plans", {
@@ -469,6 +470,7 @@ await guide.shot("plans", {
   highlight: [page.getByTestId("plan-pro"), page.getByTestId("plan-team")],
   crop: page.getByTestId("plans"),
   mask: [page.getByTestId("card-number")],
+  hide: [page.getByRole("listitem").filter({ hasText: /^test-/ })],
   style: ".promo-banner { display: none; }",
   highlightStyle: "outline: 3px dashed #0a84ff; outline-offset: 2px",
   padding: 24,
@@ -665,6 +667,22 @@ The reporter writes nothing when the run may not include every guide:
 `--project` is not a partial run: the selected locales' pages are written, and the others' are not written and block `prune`, as in the table above.
 
 ## Recipes
+
+### Keep shots stable
+
+A shot is rewritten only when the screen changed, so anything that differs between runs shows up as a changed image. Remove each source of change at its root:
+
+| What changes between runs                                            | What to do                                                                                                                         |
+| -------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| Today's date, times, "5 minutes ago"                                 | Keep [the clock](#the-clock) frozen, or [freeze it at a date](#freeze-the-clock-at-a-date). If it must run, `mask` the dates.      |
+| Values a test must make unique, such as IDs                          | Keep the rest of the test data fixed, and `mask` only the unique values.                                                           |
+| Data other tests or earlier runs created                             | `hide` it with a locator that picks it by content. Locale projects that run in parallel against one backend see each other's data. |
+| Fixed parts of the page that come and go, such as toasts and banners | Hide them for every shot with `guideShot.style`.                                                                                   |
+| Animations and the text caret                                        | Off by default (`animations: "disabled"`, `caret: "hide"`); [hide an editor's own caret](#hide-an-editors-caret) with `style`.     |
+| Fonts and anti-aliasing between machines                             | Take shots in one image: [stable rendering with Docker](#stable-rendering-with-docker).                                            |
+| Rendering noise too small to see                                     | Already ignored by the built-in comparison (`shots.same`).                                                                         |
+
+`mask` keeps the element's box and paints over it, so use it when the place should stay and only the value changes. `hide` removes the element, and the ones after it move up, so use it when the element should not be there at all.
 
 ### A docs job in CI
 

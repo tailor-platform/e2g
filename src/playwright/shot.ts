@@ -3,6 +3,7 @@ import type { Text } from "../types.js";
 import { SHOT_DEFAULTS, type GuideShotSettings } from "./use.js";
 
 const HIGHLIGHT = "data-guides-highlight";
+const HIDDEN = "data-guides-hidden";
 
 export type ScreenshotSettings = Omit<
   PageScreenshotOptions,
@@ -16,6 +17,7 @@ export interface ShotOptions {
   highlight?: Locator | Locator[];
   crop?: Locator;
   mask?: Locator[];
+  hide?: Locator[];
   style?: string;
   highlightStyle?: string;
   padding?: number;
@@ -25,6 +27,7 @@ export interface TakeShotOptions {
   highlight: Locator[];
   crop?: Locator;
   mask?: Locator[];
+  hide?: Locator[];
   highlightStyle: string;
   padding: number;
   style: string;
@@ -49,7 +52,7 @@ async function paddedClip(boxes: Locator[], padding: number) {
 }
 
 export async function takeShot(page: Page, opts: TakeShotOptions): Promise<Buffer> {
-  const { highlight, crop, mask } = opts;
+  const { highlight, crop, mask, hide = [] } = opts;
   const options: PageScreenshotOptions = {
     ...opts.screenshot,
     mask,
@@ -64,9 +67,37 @@ export async function takeShot(page: Page, opts: TakeShotOptions): Promise<Buffe
         ),
       ),
     );
+  // A hide locator may match no element or several, unlike a highlight. The rule
+  // goes into the page rather than the screenshot's style, which applies only
+  // while the shot is taken: the crop must be measured with the elements gone.
+  const conceal = async (on: boolean) => {
+    if (hide.length === 0) return;
+    await Promise.all(
+      hide.map((l) =>
+        l.evaluateAll(
+          (els, [name, on]) =>
+            els.forEach((el) => el.toggleAttribute(name as string, on as boolean)),
+          [HIDDEN, on],
+        ),
+      ),
+    );
+    await page.evaluate(
+      ([name, on]) => {
+        const id = `${name}-style`;
+        document.getElementById(id)?.remove();
+        if (!on) return;
+        const style = document.createElement("style");
+        style.id = id;
+        style.textContent = `[${name}]{display:none!important}`;
+        document.head.append(style);
+      },
+      [HIDDEN, on] as const,
+    );
+  };
 
   await mark(true);
   try {
+    await conceal(true);
     return crop
       ? await page.screenshot({
           ...options,
@@ -75,6 +106,7 @@ export async function takeShot(page: Page, opts: TakeShotOptions): Promise<Buffe
         })
       : await page.screenshot(options);
   } finally {
+    await conceal(false);
     await mark(false);
   }
 }
@@ -94,6 +126,7 @@ export function captureShot(
     highlight: [opts.highlight ?? []].flat(),
     crop: opts.crop,
     mask: opts.mask,
+    hide: opts.hide,
     highlightStyle: opts.highlightStyle ?? settings.highlight,
     padding: opts.padding ?? settings.padding,
     style: [settings.style, opts.style].filter(Boolean).join("\n"),

@@ -564,6 +564,39 @@ test.describe("captureShot", () => {
     expect(pixel(png, 2, 700)).toEqual([0, 128, 0]);
   });
 
+  test("hidden elements leave the shot and come back after it", async ({ page }) => {
+    const card = page.locator("#card");
+    const box = (await card.boundingBox())!;
+    const png = await capture(page, {
+      hide: [card, page.locator("#missing")],
+      style: "#note{background:rgb(0,0,200)!important}",
+    });
+    // the note moves into the card's place
+    expect(pixel(png, box.x + box.width / 2, box.y + box.height / 2)).toEqual([0, 0, 200]);
+    await expect(card).toBeVisible();
+    await expect(card).not.toHaveAttribute("data-guides-hidden");
+    await expect(page.locator("#data-guides-hidden-style")).toHaveCount(0);
+  });
+
+  test("a hide locator may match several elements, and the crop is measured without them", async ({
+    page,
+  }) => {
+    const buttons = page.getByRole("button");
+    const card = page.locator("#card");
+    const png = await capture(page, {
+      hide: [buttons],
+      crop: card,
+      padding: 0,
+      style: "#card{background:rgb(0,0,200)!important}",
+    });
+    // measured before hiding, the crop would land where the card was: on the note
+    const box = (await card.boundingBox())!;
+    expect(Math.abs(png.readUInt32BE(16) - box.width)).toBeLessThanOrEqual(1);
+    expect(pixel(png, box.width / 2, box.height / 2)).toEqual([0, 0, 200]);
+    await expect(buttons).toHaveCount(2);
+    for (const button of await buttons.all()) await expect(button).toBeVisible();
+  });
+
   test("two highlights are both outlined and inside the crop", async ({ page }) => {
     const save = page.getByRole("button", { name: "Save changes" });
     const publish = page.getByRole("button", { name: "Publish" });
