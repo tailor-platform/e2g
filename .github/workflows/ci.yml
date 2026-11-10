@@ -15,6 +15,10 @@ permissions:
 jobs:
   check:
     runs-on: ubuntu-latest
+    # browsers and their system libraries come in the image; keep in step with @playwright/test in package.json
+    container:
+      image: mcr.microsoft.com/playwright:v1.64.1-noble@sha256:2f05f8a734509a7b3f26a912639488ee08f58a7b292d14d62271bcff9038768f
+      options: --ipc=host --init
     strategy:
       matrix:
         node: [22, 24]
@@ -28,7 +32,6 @@ jobs:
           node-version: ${{ matrix.node }}
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm exec playwright install --with-deps chromium
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm test
@@ -37,10 +40,17 @@ jobs:
 
   browser:
     runs-on: ubuntu-latest
+    # the pinned version runs in its image; latest has no matching image, so it installs on the host
+    container:
+      image: ${{ matrix.image }}
+      options: --ipc=host --init
     strategy:
       fail-fast: false
       matrix:
-        playwright: ["1.64.0", "latest"]
+        include:
+          - playwright: "1.64.0"
+            image: mcr.microsoft.com/playwright:v1.64.0-noble@sha256:06a9939e57531807f8d5fd76ce44b53165ffb7d7501d87ab10e285c20b1e971f
+          - playwright: latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -52,7 +62,8 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm add -D -E @playwright/test@${{ matrix.playwright }}
-      - run: pnpm exec playwright install --with-deps chromium
+      - if: ${{ !matrix.image }}
+        run: pnpm exec playwright install --with-deps chromium
       - run: pnpm exec playwright --version
       - run: pnpm test:browser
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
