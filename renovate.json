@@ -27,6 +27,11 @@
       "groupName": "github-actions",
       "matchManagers": ["github-actions"],
       "matchUpdateTypes": ["patch", "minor", "digest"]
+    },
+    {
+      "description": "@playwright/test and the CI container image must move together; this comes after github-actions so its groupName wins",
+      "groupName": "playwright",
+      "matchPackageNames": ["@playwright/test", "mcr.microsoft.com/playwright"]
     }
   ]
 }
