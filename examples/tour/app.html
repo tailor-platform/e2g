@@ -1,0 +1,194 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Acme</title>
+    <style>
+      [hidden] {
+        display: none !important;
+      }
+      body {
+        margin: 0;
+        font:
+          16px/1.5 system-ui,
+          sans-serif;
+        color: #1d1d1f;
+        background: #f5f5f7;
+      }
+      nav {
+        display: flex;
+        gap: 24px;
+        align-items: center;
+        padding: 14px 28px;
+        background: #fff;
+        border-bottom: 1px solid #ddd;
+      }
+      nav b {
+        font-size: 18px;
+      }
+      nav a {
+        color: #555;
+        text-decoration: none;
+      }
+      nav a.on {
+        color: #111;
+        font-weight: 600;
+      }
+      main {
+        max-width: 880px;
+        margin: 32px auto;
+        padding: 0 24px;
+      }
+      header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 16px;
+      }
+      h1 {
+        margin: 0;
+        font-size: 24px;
+      }
+      button {
+        font: inherit;
+        padding: 8px 16px;
+        border-radius: 8px;
+        border: 1px solid #bbb;
+        background: #fff;
+        cursor: pointer;
+      }
+      button.primary {
+        background: #2457d6;
+        border-color: #2457d6;
+        color: #fff;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        background: #fff;
+        border: 1px solid #ddd;
+        border-radius: 8px;
+      }
+      td,
+      th {
+        padding: 12px 16px;
+        text-align: left;
+        border-bottom: 1px solid #eee;
+      }
+      th {
+        font-size: 13px;
+        color: #666;
+        font-weight: 600;
+      }
+      dialog {
+        border: 1px solid #ccc;
+        border-radius: 12px;
+        padding: 24px;
+        width: 380px;
+      }
+      dialog::backdrop {
+        background: rgba(0, 0, 0, 0.35);
+      }
+      label {
+        display: block;
+        font-size: 14px;
+        margin-bottom: 6px;
+      }
+      input,
+      select {
+        font: inherit;
+        width: 100%;
+        box-sizing: border-box;
+        padding: 8px;
+        border: 1px solid #bbb;
+        border-radius: 6px;
+        margin-bottom: 14px;
+      }
+      .row {
+        display: flex;
+        justify-content: flex-end;
+        gap: 8px;
+      }
+    </style>
+  </head>
+  <body>
+    <nav>
+      <b>Acme</b><a href="#">Projects</a><a href="#">Billing</a><a class="on" href="#">Settings</a>
+    </nav>
+    <main>
+      <header data-testid="members-header">
+        <h1>Members</h1>
+        <button class="primary" data-testid="invite-button">Invite</button>
+      </header>
+      <table>
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Email</th>
+            <th>Role</th>
+          </tr>
+        </thead>
+        <tbody id="rows">
+          <tr data-testid="member-row">
+            <td>Alex Kim</td>
+            <td>alex@example.com</td>
+            <td>Admin</td>
+          </tr>
+          <tr data-testid="member-row">
+            <td>Riley Chen</td>
+            <td>riley@example.com</td>
+            <td>Member</td>
+          </tr>
+        </tbody>
+      </table>
+    </main>
+    <dialog id="dlg">
+      <h2 style="margin-top: 0">Invite a teammate</h2>
+      <label for="email">Email</label><input id="email" type="email" />
+      <label for="role">Role</label
+      ><select id="role">
+        <option>Member</option>
+        <option>Admin</option>
+      </select>
+      <p
+        id="admin-note"
+        hidden
+        style="
+          margin: -4px 0 14px;
+          padding: 10px 12px;
+          border-radius: 6px;
+          background: #fff4e5;
+          font-size: 14px;
+        "
+      >
+        Admins can manage billing and invite others.
+      </p>
+      <label id="projects-label" for="projects">Projects</label
+      ><select id="projects">
+        <option>All projects</option>
+        <option>Website</option>
+        <option>Mobile app</option>
+      </select>
+      <div class="row">
+        <button onclick="dlg.close()">Cancel</button
+        ><button class="primary" data-testid="send-button">Send</button>
+      </div>
+    </dialog>
+    <script>
+      role.onchange = () => {
+        const a = role.value === "Admin";
+        document.getElementById("admin-note").hidden = !a;
+        projects.hidden = a;
+        document.getElementById("projects-label").hidden = a;
+      };
+      document.querySelector("[data-testid=invite-button]").onclick = () => dlg.showModal();
+      document.querySelector("[data-testid=send-button]").onclick = () => {
+        const tr = document.createElement("tr");
+        tr.dataset.testid = "member-row";
+        tr.innerHTML = `<td>(invited)</td><td>${email.value}</td><td>${role.value}</td>`;
+        rows.append(tr);
+        dlg.close();
+      };
+    </script>
+  </body>
+</html>

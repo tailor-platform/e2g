@@ -1,0 +1,1380 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>__TITLE__</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=Instrument+Serif&family=JetBrains+Mono:wght@400;600&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --paper: #f4f1ea;
+        --surface: #fffdf8;
+        --mat: #e9e5db;
+        --ink: #1b1a17;
+        --ink-2: #57544c;
+        --ink-3: #8a867b;
+        --rule: #d9d4c7;
+        --accent: #c2410c;
+        --accent-ink: #ffffff;
+        --accent-soft: rgba(194, 65, 12, 0.14);
+        --shade: rgba(27, 26, 23, 0.5);
+        --done: #3f6212;
+        --code-bg: #fbf9f4;
+        --code-line: #f1ece0;
+        --code-hl: rgba(194, 65, 12, 0.09);
+        --code-shot: rgba(194, 65, 12, 0.2);
+        --tk-kw: #8b2f97;
+        --tk-str: #2f6f3e;
+        --tk-com: #8a867b;
+        --tk-num: #a1580b;
+        --tk-fn: #1d5fa8;
+        --tk-gutter: #b3aea1;
+        color-scheme: light;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root:not([data-theme="light"]) {
+          --paper: #141311;
+          --surface: #1d1c19;
+          --mat: #262420;
+          --ink: #f0ede5;
+          --ink-2: #bdb8ab;
+          --ink-3: #8a8578;
+          --rule: #34322c;
+          --accent: #fb8a4c;
+          --accent-ink: #1b0d04;
+          --accent-soft: rgba(251, 138, 76, 0.18);
+          --shade: rgba(0, 0, 0, 0.6);
+          --done: #a3c76d;
+          --code-bg: #181715;
+          --code-line: #23211d;
+          --code-hl: rgba(251, 138, 76, 0.1);
+          --code-shot: rgba(251, 138, 76, 0.22);
+          --tk-kw: #d7a0e8;
+          --tk-str: #a8d49a;
+          --tk-com: #7c786c;
+          --tk-num: #f3b37a;
+          --tk-fn: #8fbcf0;
+          --tk-gutter: #5c594f;
+          color-scheme: dark;
+        }
+      }
+      :root[data-theme="dark"] {
+        --paper: #141311;
+        --surface: #1d1c19;
+        --mat: #262420;
+        --ink: #f0ede5;
+        --ink-2: #bdb8ab;
+        --ink-3: #8a8578;
+        --rule: #34322c;
+        --accent: #fb8a4c;
+        --accent-ink: #1b0d04;
+        --accent-soft: rgba(251, 138, 76, 0.18);
+        --shade: rgba(0, 0, 0, 0.6);
+        --done: #a3c76d;
+        --code-bg: #181715;
+        --code-line: #23211d;
+        --code-hl: rgba(251, 138, 76, 0.1);
+        --code-shot: rgba(251, 138, 76, 0.22);
+        --tk-kw: #d7a0e8;
+        --tk-str: #a8d49a;
+        --tk-com: #7c786c;
+        --tk-num: #f3b37a;
+        --tk-fn: #8fbcf0;
+        --tk-gutter: #5c594f;
+        color-scheme: dark;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+      }
+      body {
+        background: var(--paper);
+        color: var(--ink);
+        font:
+          18px/1.55 "Instrument Sans",
+          system-ui,
+          sans-serif;
+        -webkit-font-smoothing: antialiased;
+      }
+      button {
+        font: inherit;
+        color: inherit;
+      }
+      strong {
+        font-weight: 650;
+      }
+
+      /* top bar */
+      .bar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        padding: 20px 32px;
+        border-bottom: 1px solid var(--rule);
+      }
+      .crumbs {
+        display: flex;
+        align-items: baseline;
+        gap: 10px;
+        min-width: 0;
+        flex-wrap: wrap;
+      }
+      .crumbs a {
+        color: var(--ink-2);
+        text-decoration: none;
+        font-size: 16px;
+      }
+      .crumbs a:hover {
+        color: var(--ink);
+        text-decoration: underline;
+      }
+      .crumbs .sep {
+        color: var(--ink-3);
+      }
+      h1 {
+        margin: 0;
+        font:
+          400 34px/1.1 "Instrument Serif",
+          Georgia,
+          serif;
+        letter-spacing: -0.01em;
+      }
+      .icon-btn {
+        width: 44px;
+        height: 44px;
+        border-radius: 50%;
+        border: 1px solid var(--rule);
+        background: var(--surface);
+        display: grid;
+        place-items: center;
+        cursor: pointer;
+        flex: none;
+      }
+      .icon-btn:hover {
+        border-color: var(--ink-3);
+      }
+      .icon-btn svg {
+        width: 20px;
+        height: 20px;
+      }
+      .icon-btn .moon {
+        display: none;
+      }
+      :root[data-theme="dark"] .icon-btn .sun {
+        display: none;
+      }
+      :root[data-theme="dark"] .icon-btn .moon {
+        display: block;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root:not([data-theme="light"]) .icon-btn .sun {
+          display: none;
+        }
+        :root:not([data-theme="light"]) .icon-btn .moon {
+          display: block;
+        }
+      }
+
+      /* layout */
+      .layout {
+        display: grid;
+        grid-template-columns: 260px minmax(0, 1fr);
+        gap: 32px;
+        max-width: 1360px;
+        margin: 0 auto;
+        padding: 32px;
+      }
+      body.with-code .layout {
+        grid-template-columns: 240px minmax(0, 1fr) minmax(380px, 34%);
+        max-width: none;
+      }
+
+      /* the test beside the tour */
+      .code {
+        display: none;
+        position: sticky;
+        top: 24px;
+        align-self: start;
+        max-height: calc(100vh - 140px);
+        flex-direction: column;
+        background: var(--code-bg);
+        border: 1px solid var(--rule);
+        border-radius: 18px;
+        overflow: hidden;
+      }
+      body.with-code .code {
+        display: flex;
+      }
+      .code-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 14px 18px;
+        border-bottom: 1px solid var(--rule);
+      }
+      .code-head .file {
+        font:
+          600 14px/1.3 "JetBrains Mono",
+          ui-monospace,
+          monospace;
+        color: var(--ink);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .code-head .where {
+        font-size: 14px;
+        color: var(--ink-3);
+        white-space: nowrap;
+      }
+      .code-body {
+        overflow-y: auto;
+        overflow-x: hidden;
+        min-height: 0;
+        flex: 1;
+        padding: 10px 0;
+        font:
+          14px/1.7 "JetBrains Mono",
+          ui-monospace,
+          monospace;
+        tab-size: 2;
+        font-variant-ligatures: none;
+      }
+      .code-body .ln {
+        display: grid;
+        grid-template-columns: 48px 1fr;
+        padding-right: 18px;
+        transition:
+          background 0.2s,
+          opacity 0.2s;
+      }
+      .code-body .ln > span:last-child {
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        padding-left: 2ch;
+        text-indent: -2ch;
+      }
+      .code-body .ln .no {
+        text-align: right;
+        padding-right: 16px;
+        color: var(--tk-gutter);
+        user-select: none;
+      }
+      .code-body.focus .ln {
+        opacity: 0.45;
+      }
+      .code-body.focus .ln.in {
+        opacity: 1;
+        background: var(--code-hl);
+      }
+      .code-body .ln.in .no {
+        color: var(--accent);
+      }
+      .code-body .ln.shot {
+        background: var(--code-shot) !important;
+      }
+      .code-body .ln.first {
+        box-shadow:
+          inset 3px 0 0 var(--accent),
+          inset 0 1px 0 color-mix(in srgb, var(--accent) 40%, transparent);
+      }
+      .code-body .ln.last {
+        box-shadow:
+          inset 3px 0 0 var(--accent),
+          inset 0 -1px 0 color-mix(in srgb, var(--accent) 40%, transparent);
+      }
+      .code-body .ln.in:not(.first):not(.last) {
+        box-shadow: inset 3px 0 0 var(--accent);
+      }
+      .code-body .ln.first.last {
+        box-shadow:
+          inset 3px 0 0 var(--accent),
+          inset 0 1px 0 color-mix(in srgb, var(--accent) 40%, transparent),
+          inset 0 -1px 0 color-mix(in srgb, var(--accent) 40%, transparent);
+      }
+      .tk-kw {
+        color: var(--tk-kw);
+      }
+      .tk-str {
+        color: var(--tk-str);
+      }
+      .tk-com {
+        color: var(--tk-com);
+        font-style: italic;
+      }
+      .tk-num {
+        color: var(--tk-num);
+      }
+      .tk-fn {
+        color: var(--tk-fn);
+      }
+      .code-foot {
+        padding: 12px 18px;
+        border-top: 1px solid var(--rule);
+        font-size: 15px;
+        color: var(--ink-2);
+      }
+      .code-foot code {
+        font:
+          600 13px "JetBrains Mono",
+          monospace;
+        color: var(--accent);
+      }
+      .toggle {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        height: 44px;
+        padding: 0 16px;
+        border-radius: 999px;
+        border: 1px solid var(--rule);
+        background: var(--surface);
+        cursor: pointer;
+        font-size: 16px;
+      }
+      .toggle[aria-pressed="true"] {
+        border-color: var(--accent);
+        color: var(--accent);
+      }
+      .toggle svg {
+        width: 18px;
+        height: 18px;
+      }
+      .bar-tools {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+      }
+      @media (max-width: 1400px) {
+        body.with-code .layout {
+          grid-template-columns: minmax(0, 1fr) minmax(360px, 40%);
+        }
+        body.with-code .rail {
+          grid-column: 1 / -1;
+        }
+        body.with-code .rail ol {
+          display: flex;
+          gap: 8px;
+        }
+        body.with-code .rail li + li::before {
+          display: none;
+        }
+        body.with-code .rail button {
+          margin: 0;
+          padding: 0;
+        }
+        body.with-code .rail .label {
+          display: none;
+        }
+        body.with-code .rail-meta {
+          margin: 0 0 10px;
+        }
+      }
+      .rail ol {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        position: relative;
+      }
+      .rail li {
+        position: relative;
+      }
+      .rail li + li::before {
+        content: "";
+        position: absolute;
+        left: 17px;
+        top: -14px;
+        height: 14px;
+        width: 2px;
+        background: var(--rule);
+      }
+      .rail li.past + li::before {
+        background: var(--done);
+      }
+      .rail button {
+        display: flex;
+        gap: 14px;
+        align-items: flex-start;
+        width: 100%;
+        text-align: left;
+        background: none;
+        border: 0;
+        padding: 7px 10px 7px 0;
+        margin-bottom: 14px;
+        cursor: pointer;
+        border-radius: 10px;
+      }
+      .rail .num {
+        flex: none;
+        width: 36px;
+        height: 36px;
+        border-radius: 50%;
+        display: grid;
+        place-items: center;
+        font-size: 15px;
+        font-weight: 600;
+        border: 2px solid var(--rule);
+        background: var(--surface);
+        color: var(--ink-2);
+      }
+      .rail .label {
+        padding-top: 5px;
+        font-size: 17px;
+        color: var(--ink-2);
+        line-height: 1.4;
+      }
+      .rail button:hover .label {
+        color: var(--ink);
+      }
+      .rail li.past .num {
+        border-color: var(--done);
+        background: var(--done);
+        color: var(--surface);
+      }
+      .rail li.now .num {
+        border-color: var(--accent);
+        background: var(--accent);
+        color: var(--accent-ink);
+      }
+      .rail li.now .label {
+        color: var(--ink);
+        font-weight: 600;
+      }
+      .rail .branch .num {
+        border-style: dashed;
+      }
+      .rail-meta {
+        font-size: 14px;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--ink-3);
+        margin: 4px 0 18px;
+        font-weight: 600;
+      }
+
+      /* stage */
+      .mat {
+        position: relative;
+        background: var(--mat);
+        border-radius: 18px;
+        padding: 40px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        min-height: 420px;
+        justify-content: center;
+      }
+      .stage {
+        position: relative;
+        width: fit-content;
+        max-width: 100%;
+        animation: enter 0.28s ease;
+      }
+      .stage img {
+        display: block;
+        max-width: 100%;
+        max-height: 62vh;
+        width: auto;
+        height: auto;
+        border-radius: 10px;
+        box-shadow:
+          0 1px 2px rgba(0, 0, 0, 0.08),
+          0 12px 32px rgba(0, 0, 0, 0.14);
+        user-select: none;
+        -webkit-user-drag: none;
+      }
+      .shade {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        fill: var(--shade);
+        pointer-events: none;
+        border-radius: 10px;
+      }
+      .hole {
+        position: absolute;
+        border: 0;
+        padding: 0;
+        background: transparent;
+        border-radius: 8px;
+        cursor: pointer;
+        box-shadow: 0 0 0 2px var(--accent);
+      }
+      .hole::after {
+        content: "";
+        position: absolute;
+        inset: -2px;
+        border-radius: 10px;
+        box-shadow: 0 0 0 0 var(--accent);
+        animation: ping 1.8s ease-out infinite;
+        pointer-events: none;
+      }
+      .hole:hover,
+      .hole:focus-visible {
+        outline: none;
+        box-shadow:
+          0 0 0 3px var(--accent),
+          0 0 0 9px var(--accent-soft);
+      }
+      .hole.nudge {
+        animation: nudge 0.45s ease 2;
+      }
+      .badge {
+        position: absolute;
+        transform: translate(-50%, -50%);
+        width: 28px;
+        height: 28px;
+        border-radius: 50%;
+        background: var(--accent);
+        color: var(--accent-ink);
+        font-size: 14px;
+        font-weight: 700;
+        display: grid;
+        place-items: center;
+        pointer-events: none;
+        box-shadow: 0 0 0 3px var(--mat);
+      }
+      @keyframes ping {
+        0% {
+          box-shadow: 0 0 0 0 var(--accent);
+          opacity: 0.7;
+        }
+        100% {
+          box-shadow: 0 0 0 14px var(--accent);
+          opacity: 0;
+        }
+      }
+      @keyframes nudge {
+        50% {
+          transform: scale(1.04);
+          box-shadow:
+            0 0 0 4px var(--accent),
+            0 0 0 12px var(--accent-soft);
+        }
+      }
+      @keyframes enter {
+        from {
+          opacity: 0;
+          transform: translateY(6px);
+        }
+        to {
+          opacity: 1;
+          transform: none;
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .hole::after,
+        .stage,
+        .panel {
+          animation: none !important;
+        }
+        .hole.nudge {
+          animation: none;
+          box-shadow: 0 0 0 5px var(--accent);
+        }
+      }
+
+      /* coach mark */
+      .coach {
+        position: absolute;
+        z-index: 2;
+        width: 340px;
+        max-width: calc(100vw - 64px);
+        background: var(--surface);
+        color: var(--ink);
+        border-radius: 14px;
+        padding: 18px 20px 16px;
+        box-shadow:
+          0 1px 2px rgba(0, 0, 0, 0.1),
+          0 16px 40px rgba(0, 0, 0, 0.22);
+      }
+      .coach .caret {
+        position: absolute;
+        width: 16px;
+        height: 16px;
+        background: var(--surface);
+        transform: rotate(45deg);
+      }
+      .coach.docked {
+        position: relative;
+        width: min(620px, 100%);
+        margin-top: 28px;
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+      }
+      .coach.docked .caret {
+        display: none;
+      }
+      .coach .kicker {
+        font-size: 14px;
+        font-weight: 600;
+        color: var(--accent);
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+      }
+      .coach p {
+        margin: 4px 0 0;
+        font-size: 22px;
+        line-height: 1.35;
+      }
+      .coach .how {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-top: 12px;
+        font-size: 15px;
+        color: var(--ink-3);
+      }
+      .coach .dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background: var(--accent);
+        box-shadow: 0 0 0 4px var(--accent-soft);
+      }
+
+      /* panels: start, note, choose, done */
+      .panel {
+        background: var(--surface);
+        border-radius: 18px;
+        padding: 48px;
+        animation: enter 0.28s ease;
+        border: 1px solid var(--rule);
+      }
+      .panel .eyebrow {
+        font-size: 14px;
+        font-weight: 600;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--ink-3);
+      }
+      .panel h2 {
+        font:
+          400 44px/1.1 "Instrument Serif",
+          Georgia,
+          serif;
+        margin: 10px 0 14px;
+        letter-spacing: -0.01em;
+      }
+      .panel .lede {
+        font-size: 22px;
+        color: var(--ink-2);
+        max-width: 40ch;
+        margin: 0 0 32px;
+      }
+      .primary {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        background: var(--accent);
+        color: var(--accent-ink);
+        border: 0;
+        border-radius: 999px;
+        padding: 14px 26px;
+        font-size: 19px;
+        font-weight: 600;
+        cursor: pointer;
+        text-decoration: none;
+      }
+      .primary:hover {
+        filter: brightness(1.06);
+      }
+      .secondary {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        background: transparent;
+        border: 1px solid var(--rule);
+        border-radius: 999px;
+        padding: 13px 22px;
+        font-size: 18px;
+        cursor: pointer;
+        color: var(--ink);
+        text-decoration: none;
+      }
+      .secondary:hover {
+        border-color: var(--ink-3);
+      }
+      .actions {
+        display: flex;
+        gap: 12px;
+        flex-wrap: wrap;
+      }
+      .choices {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+        gap: 16px;
+      }
+      .choice {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        text-decoration: none;
+        color: inherit;
+        background: var(--paper);
+        border: 2px solid var(--rule);
+        border-radius: 16px;
+        padding: 24px 26px;
+        transition:
+          border-color 0.15s,
+          transform 0.15s;
+      }
+      .choice:hover,
+      .choice:focus-visible {
+        border-color: var(--accent);
+        outline: none;
+        transform: translateY(-2px);
+      }
+      .choice b {
+        font-size: 24px;
+        font-weight: 500;
+      }
+      .choice span {
+        color: var(--ink-2);
+        font-size: 18px;
+      }
+      .choice .go {
+        margin-top: 10px;
+        color: var(--accent);
+        font-weight: 600;
+        font-size: 16px;
+      }
+      .check {
+        width: 64px;
+        height: 64px;
+        border-radius: 50%;
+        background: var(--done);
+        display: grid;
+        place-items: center;
+        margin-bottom: 20px;
+      }
+      .check svg {
+        width: 32px;
+        height: 32px;
+        stroke: var(--surface);
+      }
+
+      /* footer */
+      .foot {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        margin-top: 18px;
+        color: var(--ink-3);
+        font-size: 16px;
+      }
+      .link-btn {
+        background: none;
+        border: 0;
+        padding: 6px 0;
+        cursor: pointer;
+        color: var(--ink-2);
+        font-size: 17px;
+      }
+      .link-btn:hover:not(:disabled) {
+        color: var(--ink);
+        text-decoration: underline;
+      }
+      .link-btn:disabled {
+        opacity: 0.35;
+        cursor: default;
+      }
+      kbd {
+        font:
+          600 13px/1 "Instrument Sans",
+          sans-serif;
+        border: 1px solid var(--rule);
+        border-bottom-width: 2px;
+        border-radius: 6px;
+        padding: 3px 6px;
+        color: var(--ink-2);
+        background: var(--surface);
+      }
+
+      @media (max-width: 900px) {
+        body.with-code .layout {
+          grid-template-columns: 1fr;
+        }
+        .code {
+          position: static;
+          max-height: 60vh;
+        }
+        .bar {
+          padding: 16px;
+        }
+        h1 {
+          font-size: 28px;
+        }
+        .layout {
+          grid-template-columns: 1fr;
+          gap: 20px;
+          padding: 16px;
+        }
+        .rail ol {
+          display: flex;
+          gap: 8px;
+          overflow-x: auto;
+          padding-bottom: 4px;
+        }
+        .rail li + li::before {
+          display: none;
+        }
+        .rail button {
+          margin: 0;
+          padding: 0;
+        }
+        .rail .label {
+          display: none;
+        }
+        .rail-meta {
+          margin: 0 0 10px;
+        }
+        .mat {
+          padding: 16px;
+          min-height: 0;
+        }
+        .panel {
+          padding: 28px 22px;
+        }
+        .panel h2 {
+          font-size: 34px;
+        }
+        .keys {
+          display: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header class="bar">
+      <div class="crumbs" id="crumbs"><h1 id="title"></h1></div>
+      <div class="bar-tools">
+        <button class="toggle" id="code-toggle" aria-pressed="true">
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.9"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <path d="M8.5 7 3.5 12l5 5M15.5 7l5 5-5 5" /></svg
+          >Test
+        </button>
+        <button class="icon-btn" id="theme" aria-label="Switch between light and dark">
+          <svg
+            class="sun"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.8"
+            stroke-linecap="round"
+          >
+            <circle cx="12" cy="12" r="4.2" />
+            <path
+              d="M12 2.5v2.2M12 19.3v2.2M2.5 12h2.2M19.3 12h2.2M5.3 5.3l1.6 1.6M17.1 17.1l1.6 1.6M5.3 18.7l1.6-1.6M17.1 6.9l1.6-1.6"
+            />
+          </svg>
+          <svg
+            class="moon"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.8"
+            stroke-linejoin="round"
+          >
+            <path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5Z" />
+          </svg>
+        </button>
+      </div>
+    </header>
+    <div class="layout">
+      <nav class="rail" aria-label="Steps">
+        <div class="rail-meta" id="rail-meta"></div>
+        <ol id="rail"></ol>
+      </nav>
+      <main>
+        <div id="view"></div>
+        <div class="foot">
+          <button class="link-btn" id="back">← Back</button>
+          <span class="keys"><kbd>←</kbd> <kbd>→</kbd> to move between steps</span>
+        </div>
+      </main>
+      <aside class="code" id="code" aria-label="The test this tour comes from">
+        <div class="code-head">
+          <span class="file" id="code-file"></span><span class="where" id="code-where"></span>
+        </div>
+        <div class="code-body" id="code-body"></div>
+        <div class="code-foot" id="code-foot"></div>
+      </aside>
+    </div>
+    <script>
+      const DATA = __DATA__;
+      const $ = (id) => document.getElementById(id);
+      const esc = (s) =>
+        s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+      const md = (s) => esc(s).replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+      const plain = (s) => s.replace(/\*\*/g, "");
+      const pct = (n) => (n * 100).toFixed(3) + "%";
+
+      // the opening paragraphs make the start screen; every other block is a stop of the tour
+      const intro = [];
+      while (DATA.stops[0] && DATA.stops[0].kind === "say") intro.push(DATA.stops.shift().text);
+      const STOPS = DATA.stops;
+      const N = STOPS.length;
+      const START = -1,
+        END = N;
+      let i = location.hash === "#choose" ? END : START;
+
+      $("title").textContent = DATA.title;
+      if (DATA.parent)
+        $("crumbs").insertAdjacentHTML(
+          "afterbegin",
+          '<a href="' +
+            esc(DATA.parent.href) +
+            '">' +
+            esc(DATA.parent.title) +
+            '</a><span class="sep">/</span>',
+        );
+
+      // a small TypeScript tokenizer: enough to color a spec file, split into lines
+      const KEYWORDS = new Set(
+        "import export from const let var async await function return if else for of in new type interface as typeof true false null undefined throw try catch".split(
+          " ",
+        ),
+      );
+      const TOKEN =
+        /(\/\/[^\n]*|\/\*[\s\S]*?\*\/)|("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`)|(\b\d[\d_.]*\b)|([A-Za-z_$][\w$]*)(?=\s*\()|([A-Za-z_$][\w$]*)|([\s\S])/g;
+      function highlight(text) {
+        const lines = [""];
+        const push = (cls, value) =>
+          value.split("\n").forEach((part, k) => {
+            if (k > 0) lines.push("");
+            if (part)
+              lines[lines.length - 1] += cls
+                ? '<span class="' + cls + '">' + esc(part) + "</span>"
+                : esc(part);
+          });
+        for (const m of text.matchAll(TOKEN)) {
+          const [all, com, str, num, call, word] = m;
+          if (com) push("tk-com", all);
+          else if (str) push("tk-str", all);
+          else if (num) push("tk-num", all);
+          else if (call) push(KEYWORDS.has(call) ? "tk-kw" : "tk-fn", all);
+          else if (word) push(KEYWORDS.has(word) ? "tk-kw" : "", all);
+          else push("", all);
+        }
+        return lines;
+      }
+      const HIGHLIGHTED = {};
+      let shownFile = null;
+
+      function renderCode() {
+        const stop = i >= 0 && i < N ? STOPS[i] : null;
+        const code = stop && stop.code;
+        const file = code ? code.file : DATA.source;
+        const body = $("code-body");
+        if (file !== shownFile) {
+          const lines = (HIGHLIGHTED[file] ??= highlight(DATA.files[file]));
+          body.innerHTML = lines
+            .map(
+              (l, k) =>
+                '<div class="ln" data-l="' +
+                (k + 1) +
+                '"><span class="no">' +
+                (k + 1) +
+                "</span><span>" +
+                (l || " ") +
+                "</span></div>",
+            )
+            .join("");
+          shownFile = file;
+        }
+        $("code-file").textContent = file;
+        body.classList.toggle("focus", !!code);
+        body.querySelectorAll(".ln").forEach((el) => {
+          const l = Number(el.dataset.l);
+          const inside = !!code && l >= code.start && l <= code.end;
+          el.classList.toggle("in", inside);
+          el.classList.toggle("first", inside && l === code.start);
+          el.classList.toggle("last", inside && l === code.end);
+          el.classList.toggle("shot", !!code && l === code.shot);
+        });
+        $("code-where").textContent = code
+          ? code.start === code.end
+            ? "line " + code.start
+            : "lines " + code.start + "–" + code.end
+          : "";
+        $("code-foot").innerHTML = !stop
+          ? "Every screen of this tour comes from a passing run of this test."
+          : stop.kind === "say"
+            ? "This paragraph is a <code>guide.say</code> call."
+            : "This step is a <code>guide.step</code>" +
+              (code && code.shot
+                ? "; the screen is its <code>guide.shot</code>, highlighted."
+                : ".");
+        if (code) {
+          const first = body.querySelector('[data-l="' + code.start + '"]');
+          const last = body.querySelector('[data-l="' + code.end + '"]');
+          const mid = (first.offsetTop + last.offsetTop + last.offsetHeight) / 2;
+          body.scrollTo({
+            top: mid - body.clientHeight / 2,
+            behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
+          });
+        }
+      }
+
+      function renderRail() {
+        const steps = [...new Set(STOPS.filter((s) => s.n).map((s) => s.n))].length;
+        $("rail-meta").textContent =
+          steps +
+          (steps === 1 ? " step" : " steps") +
+          (DATA.next.length ? " · then choose a path" : "");
+        $("rail").innerHTML =
+          STOPS.map((s, k) => {
+            const state = k < i ? "past" : k === i ? "now" : "";
+            const mark = k < i ? "✓" : s.n || "i";
+            return (
+              '<li class="' +
+              state +
+              '"><button data-k="' +
+              k +
+              '"' +
+              (k === i ? ' aria-current="step"' : "") +
+              '><span class="num">' +
+              mark +
+              '</span><span class="label">' +
+              md(s.text) +
+              "</span></button></li>"
+            );
+          }).join("") +
+          (DATA.next.length
+            ? '<li class="branch ' +
+              (i === END ? "now" : "") +
+              '"><button data-k="' +
+              END +
+              '"><span class="num">?</span><span class="label">Choose a path</span></button></li>'
+            : "");
+        $("rail")
+          .querySelectorAll("button")
+          .forEach((b) => (b.onclick = () => jump(Number(b.dataset.k))));
+      }
+
+      function panel(html) {
+        const el = document.createElement("section");
+        el.className = "panel";
+        el.innerHTML = html;
+        return el;
+      }
+
+      function startPanel() {
+        const el = panel(
+          '<div class="eyebrow">Guided tour · ' +
+            N +
+            " screens</div><h2>" +
+            esc(DATA.title) +
+            "</h2>" +
+            (intro.length ? '<p class="lede">' + intro.map(md).join("<br>") + "</p>" : "") +
+            '<div class="actions"><button class="primary" id="go">Start the tour <span aria-hidden="true">→</span></button></div>',
+        );
+        el.querySelector("#go").onclick = () => jump(0);
+        return el;
+      }
+
+      function notePanel(s) {
+        const el = panel(
+          '<div class="eyebrow">Note</div><p class="lede" style="margin-top:12px">' +
+            md(s.text) +
+            '</p><button class="primary" id="go">Continue →</button>',
+        );
+        el.querySelector("#go").onclick = () => jump(i + 1);
+        return el;
+      }
+
+      function choosePanel() {
+        return panel(
+          '<div class="eyebrow">Your choice</div><h2>How should they join?</h2><p class="lede">Each path continues from here.</p><div class="choices">' +
+            DATA.next
+              .map(
+                (b) =>
+                  '<a class="choice" href="' +
+                  esc(b.href) +
+                  '"><b>' +
+                  md(b.label) +
+                  "</b><span>" +
+                  md(b.detail) +
+                  '</span><span class="go">Continue this way →</span></a>',
+              )
+              .join("") +
+            "</div>",
+        );
+      }
+
+      function donePanel() {
+        const el = panel(
+          '<div class="check"><svg viewBox="0 0 24 24" fill="none" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></div>' +
+            '<h2>You’re all set</h2><p class="lede">That’s everything for “' +
+            esc(DATA.title) +
+            '”.</p><div class="actions">' +
+            (DATA.parent
+              ? '<a class="secondary" href="' +
+                esc(DATA.parent.href) +
+                '">← Choose another path</a>'
+              : "") +
+            '<button class="secondary" id="again">Start over</button></div>',
+        );
+        el.querySelector("#again").onclick = () => jump(START);
+        return el;
+      }
+
+      function union(rs) {
+        const x = Math.min(...rs.map((r) => r.x)),
+          y = Math.min(...rs.map((r) => r.y));
+        return {
+          x,
+          y,
+          width: Math.max(...rs.map((r) => r.x + r.width)) - x,
+          height: Math.max(...rs.map((r) => r.y + r.height)) - y,
+        };
+      }
+
+      // beside the highlighted area, on the first side with room inside the mat; else under the image
+      function placeCoach(coach, stage, mat, target) {
+        coach.classList.remove("docked");
+        coach.removeAttribute("style");
+        stage.append(coach);
+        const S = stage.getBoundingClientRect(),
+          M = mat.getBoundingClientRect();
+        const t = { left: S.left + target.x * S.width, top: S.top + target.y * S.height };
+        t.right = t.left + target.width * S.width;
+        t.bottom = t.top + target.height * S.height;
+        const w = coach.offsetWidth,
+          h = coach.offsetHeight,
+          gap = 18,
+          pad = 12;
+        const cx = (t.left + t.right) / 2,
+          cy = (t.top + t.bottom) / 2;
+        const clampX = (x) => Math.min(Math.max(x, M.left + pad), M.right - pad - w);
+        const clampY = (y) => Math.min(Math.max(y, M.top + pad), M.bottom - pad - h);
+        const options = [
+          {
+            side: "bottom",
+            x: clampX(cx - w / 2),
+            y: t.bottom + gap,
+            fits: t.bottom + gap + h <= M.bottom - pad,
+          },
+          {
+            side: "top",
+            x: clampX(cx - w / 2),
+            y: t.top - gap - h,
+            fits: t.top - gap - h >= M.top + pad,
+          },
+          {
+            side: "right",
+            x: t.right + gap,
+            y: clampY(cy - h / 2),
+            fits: t.right + gap + w <= M.right - pad,
+          },
+          {
+            side: "left",
+            x: t.left - gap - w,
+            y: clampY(cy - h / 2),
+            fits: t.left - gap - w >= M.left + pad,
+          },
+        ];
+        const pick = options.find((o) => o.fits);
+        const caret = coach.querySelector(".caret");
+        if (!pick) {
+          coach.classList.add("docked");
+          mat.append(coach);
+          return;
+        }
+        coach.style.left = pick.x - S.left + "px";
+        coach.style.top = pick.y - S.top + "px";
+        caret.removeAttribute("style");
+        if (pick.side === "bottom" || pick.side === "top") {
+          caret.style.left = Math.min(Math.max(cx - pick.x - 8, 16), w - 32) + "px";
+          caret.style[pick.side === "bottom" ? "top" : "bottom"] = "-8px";
+        } else {
+          caret.style.top = Math.min(Math.max(cy - pick.y - 8, 16), h - 32) + "px";
+          caret.style[pick.side === "right" ? "left" : "right"] = "-8px";
+        }
+      }
+
+      function shotView(s) {
+        const mat = document.createElement("div");
+        mat.className = "mat";
+        const stage = document.createElement("div");
+        stage.className = "stage";
+        mat.append(stage);
+        stage.innerHTML =
+          '<img alt="' + esc(s.alt) + '" src="' + esc(s.src) + '" draggable="false">';
+        const regions = s.regions || [];
+        const holes = regions
+          .map(
+            (r) =>
+              "M" +
+              r.x * 100 +
+              " " +
+              r.y * 100 +
+              "h" +
+              r.width * 100 +
+              "v" +
+              r.height * 100 +
+              "h" +
+              -r.width * 100 +
+              "z",
+          )
+          .join("");
+        if (regions.length)
+          stage.insertAdjacentHTML(
+            "beforeend",
+            '<svg class="shade" viewBox="0 0 100 100" preserveAspectRatio="none"><path fill-rule="evenodd" d="M0 0H100V100H0z' +
+              holes +
+              '"/></svg>',
+          );
+        const buttons = regions.map((r, k) => {
+          const h = document.createElement("button");
+          h.className = "hole";
+          h.setAttribute(
+            "aria-label",
+            plain(s.text) + (regions.length > 1 ? " (" + (k + 1) + ")" : ""),
+          );
+          Object.assign(h.style, {
+            left: pct(r.x),
+            top: pct(r.y),
+            width: pct(r.width),
+            height: pct(r.height),
+          });
+          h.onclick = (e) => {
+            e.stopPropagation();
+            jump(i + 1);
+          };
+          stage.append(h);
+          if (regions.length > 1) {
+            const b = document.createElement("span");
+            b.className = "badge";
+            b.textContent = k + 1;
+            Object.assign(b.style, { left: pct(r.x), top: pct(r.y) });
+            stage.append(b);
+          }
+          return h;
+        });
+        // a click that misses shows where to click instead
+        stage.onclick = () =>
+          buttons.forEach((h) => {
+            h.classList.remove("nudge");
+            void h.offsetWidth;
+            h.classList.add("nudge");
+          });
+        const coach = document.createElement("div");
+        coach.className = "coach";
+        coach.onclick = (e) => e.stopPropagation();
+        coach.innerHTML =
+          '<span class="caret"></span><div class="kicker">Step ' +
+          s.n +
+          " of " +
+          STOPS[N - 1].n +
+          "</div><p>" +
+          md(s.text) +
+          "</p>" +
+          (buttons.length
+            ? '<div class="how"><span class="dot"></span>Click the highlighted ' +
+              (buttons.length > 1 ? "areas" : "area") +
+              " to continue</div>"
+            : '<div class="actions" style="margin-top:14px"><button class="primary" id="go">Continue →</button></div>');
+        const go = coach.querySelector("#go");
+        if (go) go.onclick = () => jump(i + 1);
+        const target = regions.length ? union(regions) : { x: 0.5, y: 1, width: 0, height: 0 };
+        const place = () => placeCoach(coach, stage, mat, target);
+        const img = stage.querySelector("img");
+        requestAnimationFrame(() =>
+          img.complete ? place() : img.addEventListener("load", place, { once: true }),
+        );
+        window.onresize = place;
+        setTimeout(() => buttons[0] && buttons[0].focus({ preventScroll: true }), 0);
+        return mat;
+      }
+
+      function textStep(s) {
+        const el = panel(
+          '<div class="eyebrow">Step ' +
+            s.n +
+            '</div><p class="lede" style="margin-top:12px">' +
+            md(s.text) +
+            '</p><button class="primary" id="go">Continue →</button>',
+        );
+        el.querySelector("#go").onclick = () => jump(i + 1);
+        return el;
+      }
+
+      function render() {
+        renderRail();
+        renderCode();
+        window.onresize = null;
+        $("back").disabled = i === START || (i === 0 && !intro.length && !DATA.parent);
+        let view;
+        if (i === START) view = startPanel();
+        else if (i === END) view = DATA.next.length ? choosePanel() : donePanel();
+        else {
+          const s = STOPS[i];
+          view = s.kind === "say" ? notePanel(s) : s.src ? shotView(s) : textStep(s);
+        }
+        $("view").replaceChildren(view);
+      }
+
+      function jump(k) {
+        if (k < START) return;
+        if (k === START && !intro.length) {
+          if (DATA.parent) return void (location.href = DATA.parent.href);
+          k = 0;
+        }
+        i = Math.min(k, END);
+        render();
+      }
+
+      $("back").onclick = () => jump(i - 1);
+      addEventListener("keydown", (e) => {
+        if (e.key === "ArrowRight" && i < END) jump(i + 1);
+        if (e.key === "ArrowLeft") jump(i - 1);
+      });
+      const codeToggle = $("code-toggle");
+      const showCode = (on) => {
+        document.body.classList.toggle("with-code", on);
+        codeToggle.setAttribute("aria-pressed", String(on));
+        try {
+          localStorage.setItem("tour-code", on ? "1" : "0");
+        } catch {}
+      };
+      let codeOn = true;
+      try {
+        codeOn = localStorage.getItem("tour-code") !== "0";
+      } catch {}
+      showCode(codeOn);
+      codeToggle.onclick = () => {
+        showCode(!document.body.classList.contains("with-code"));
+        render();
+      };
+      const root = document.documentElement;
+      $("theme").onclick = () => {
+        const dark = root.dataset.theme
+          ? root.dataset.theme === "dark"
+          : matchMedia("(prefers-color-scheme: dark)").matches;
+        root.dataset.theme = dark ? "light" : "dark";
+      };
+      if (!intro.length && i === START) i = 0;
+      render();
+    </script>
+  </body>
+</html>

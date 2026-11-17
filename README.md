@@ -802,6 +802,8 @@ const tour: GuideOutput = {
 
 A region's fractions are CSS percentages: put the image in a `position: relative` box, and place a marker or a tooltip with `position: absolute`, `left: x × 100%`, `top: y × 100%`, `width: width × 100%` and `height: height × 100%`. It stays on the element at any size the image is shown at.
 
+[`examples/tour`](examples/tour) builds a click-through tour this way, with branches and the test's code shown beside each step.
+
 ### Locators in several languages
 
 Take `guideLocale` from the fixtures and look texts up the way your app does, here with a stand-in `i18n(locale)` that returns a `t(key)`. Normal e2e runs have no `guideLocale`, so fall back to the locale they run in:
