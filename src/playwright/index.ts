@@ -10,4 +10,4 @@ export { expect } from "@playwright/test";
 export type { ShotOptions } from "./shot.js";
 export type { GuideOptions, GuideShotSettings } from "./use.js";
 // the types a spec file needs, so it imports from one place; Register is augmented on "@tailor-platform/e2g"
-export type { Block, Locale, Meta, Page, Shot, Text } from "../types.js";
+export type { Block, Locale, Meta, Page, Region, Shot, SourceLocation, Text } from "../types.js";

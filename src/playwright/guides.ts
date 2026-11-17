@@ -160,13 +160,13 @@ function createGuide({ info, page, locale, shots, shotSettings }: GuideContext):
       for (const l of [opts.highlight ?? []].flat()) await expect(l).toBeVisible();
       if (opts.crop) await expect(opts.crop).toBeVisible();
       names.add(name);
+      const capture = shots ? await captureShot(opts.page ?? page, opts, shotSettings) : undefined;
       await current.step.attach(SHOT, {
-        body: JSON.stringify({ name, alt }),
+        body: JSON.stringify({ name, alt, regions: capture?.regions ?? [] }),
         contentType: "application/json",
       });
-      if (!shots) return;
-      const png = await captureShot(opts.page ?? page, opts, shotSettings);
-      await current.step.attach(PNG_PREFIX + name, { body: png, contentType: "image/png" });
+      if (!capture) return;
+      await current.step.attach(PNG_PREFIX + name, { body: capture.png, contentType: "image/png" });
     },
   };
 }

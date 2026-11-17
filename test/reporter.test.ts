@@ -419,7 +419,7 @@ test("attach", guidePage("attach", { title: { en: "Attach", ja: "Attach" } }), a
   });
   await testInfo.attach("e2g/png/box", { body: red, contentType: "image/png" });
   await testInfo.attach("e2g/shot", {
-    body: JSON.stringify({ name: "ghost", alt: "Ghost" }),
+    body: JSON.stringify({ name: "ghost", alt: "Ghost", regions: [] }),
     contentType: "application/json",
   });
   await testInfo.attach("e2g/say", { body: "Ghost paragraph.", contentType: "text/markdown" });

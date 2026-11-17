@@ -6,7 +6,11 @@ import type { GuideOutput, Manifest } from "../src/core/types.js";
 import type { Block, Page } from "../src/types.js";
 
 const png = (s: string) => Buffer.from(s);
-const step = (name: string): Block => ({ kind: "step", text: name, shots: [{ name, alt: name }] });
+const step = (name: string): Block => ({
+  kind: "step",
+  text: name,
+  shots: [{ name, alt: name, regions: [] }],
+});
 
 function page(slug: string, shots: string[] = ["menu"], locale = "en"): CollectedPage {
   return {

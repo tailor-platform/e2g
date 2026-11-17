@@ -8,7 +8,7 @@ import {
   type GuideOptions,
   type Locale,
 } from "@tailor-platform/e2g/playwright";
-import type { GuidesReporterOptions } from "@tailor-platform/e2g/playwright/reporter";
+import type { GuideOutput, GuidesReporterOptions } from "@tailor-platform/e2g/playwright/reporter";
 import { output } from "./guides-output";
 
 const config = defineConfig<GuideOptions>({
@@ -118,4 +118,16 @@ test("choose a plan", guidePage("choose-a-plan", meta), async ({ page, guide, gu
   );
 });
 
-export { config, guides };
+export { config, guides, tour };
+
+const tour: GuideOutput = {
+  path: (page) => `site/tours/${page.locale}/${page.slug}.json`,
+  render: (page, { image }) => {
+    const steps = page.blocks.flatMap((block) =>
+      block.kind === "step"
+        ? [{ text: block.text, shots: block.shots.map((shot) => ({ ...shot, src: image(shot) })) }]
+        : [],
+    );
+    return `${JSON.stringify({ title: page.meta.title[page.locale], steps }, null, 2)}\n`;
+  },
+};

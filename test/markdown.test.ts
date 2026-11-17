@@ -6,7 +6,7 @@ const image = (s: { name: string }) => `img/${s.name}.png`;
 const step = (text: string, name: string, alt = name): Block => ({
   kind: "step",
   text,
-  shots: [{ name, alt }],
+  shots: [{ name, alt, regions: [] }],
 });
 const say = (text: string): Block => ({ kind: "say", text });
 
@@ -87,8 +87,8 @@ describe("blocksToMarkdown", () => {
           kind: "step",
           text: "Open it.",
           shots: [
-            { name: "a", alt: "A" },
-            { name: "b", alt: "B" },
+            { name: "a", alt: "A", regions: [] },
+            { name: "b", alt: "B", regions: [] },
           ],
         },
         { kind: "step", text: "Wait.", shots: [] },

@@ -14,12 +14,31 @@ export type Text = Register extends { locales: infer L extends string }
     : string
   : string | Record<string, string>;
 
+// a highlighted element's box in the image, as fractions of the image's width and height
+export interface Region {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
 export interface Shot {
   name: string;
   alt: string;
+  /** The boxes of the shot's `highlight` elements, in their order. */
+  regions: Region[];
 }
 
-export type Block = { kind: "say"; text: string } | { kind: "step"; text: string; shots: Shot[] };
+// where a guide.step or guide.say was called; `file` is relative to the config's rootDir, with `/` separators
+export interface SourceLocation {
+  file: string;
+  line: number;
+  column: number;
+}
+
+export type Block =
+  | { kind: "say"; text: string; location?: SourceLocation }
+  | { kind: "step"; text: string; shots: Shot[]; location?: SourceLocation };
 
 export interface GuideRecord<M = unknown> {
   schemaVersion: 1;
