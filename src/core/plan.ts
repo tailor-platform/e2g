@@ -72,6 +72,11 @@ function collisions(targets: Target[]): string[] {
     const first = owners.get(path);
     if (first === undefined) owners.set(path, owner);
     else if (first !== owner) errors.push(`pages ${first} and ${owner} both write ${path}`);
+    // a shots.path that ignores the variant would put every variant's image in one file
+    else
+      errors.push(
+        `page ${owner} writes ${path} more than once; give each variant's shots their own path`,
+      );
   }
   return errors;
 }

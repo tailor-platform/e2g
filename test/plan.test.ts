@@ -364,6 +364,39 @@ describe("plan", () => {
     ]);
   });
 
+  it("a page that writes one path twice is an error", () => {
+    const responsive: CollectedPage = {
+      ...page("intro"),
+      blocks: [
+        {
+          kind: "step",
+          text: "Open",
+          shots: [
+            {
+              name: "menu",
+              alt: "Menu",
+              images: [
+                { variant: "desktop", regions: [], png: png("d") },
+                { variant: "mobile", regions: [], png: png("m") },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+    const result = plan(
+      input({
+        pages: [responsive],
+        shotPath: (p, name) => `/site/assets/${p.locale}/${p.slug}/${name}.png`,
+      }),
+    );
+    expect(result.ops).toEqual([]);
+    expect(result.manifest).toBeNull();
+    expect(result.errors).toEqual([
+      "wrote no guide pages because page intro/en writes /site/assets/en/intro/menu.png more than once; give each variant's shots their own path",
+    ]);
+  });
+
   it("an image's src is relative to the page's directory", () => {
     const result = plan(
       input({
