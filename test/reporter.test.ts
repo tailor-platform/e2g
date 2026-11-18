@@ -213,6 +213,83 @@ describe.concurrent("GuidesReporter", { timeout: 120_000 }, () => {
     expect(result.stderr).toContain('e2g: projects "en" and "en-1" both set use.guideLocale "en"');
   });
 
+  describe("variants", () => {
+    const VARIANTS = { GUIDES_VARIANTS: "desktop,mobile" };
+
+    it("writes one page per locale with an image per variant", async () => {
+      const dir = project();
+      ok(await run(dir, { env: VARIANTS }));
+      expect(read(dir, "site/docs/en/menu.md")).toContain(
+        [
+          "1. Click Menu.",
+          "",
+          "   <picture>",
+          '     <source media="(max-width: 640px)" srcset="../../assets/en/menu/mobile/menu.png">',
+          '     <img src="../../assets/en/menu/desktop/menu.png" alt="The open menu">',
+          "   </picture>",
+        ].join("\n"),
+      );
+      expect(existsSync(join(dir, "site/assets/en/menu.png"))).toBe(false);
+      const width = (variant: string) =>
+        PNG.sync.read(readFileSync(join(dir, `site/assets/ja/menu/${variant}/menu.png`))).width;
+      // the mobile project has deviceScaleFactor 2, so its shot of the same element is twice as wide
+      expect(width("mobile")).toBe(width("desktop") * 2);
+      expect(JSON.parse(read(dir, "site/docs/.guides.json")).shots).toContain(
+        "../assets/ja/settings/mobile/settings.png",
+      );
+    });
+
+    it("a variant that did not run leaves its locale's pages unwritten", async () => {
+      const dir = project();
+      for (const opts of [
+        { env: { ...VARIANTS, GUIDES_SKIP: "ja-mobile" } },
+        {
+          env: VARIANTS,
+          args: ["--project", "en-desktop", "--project", "en-mobile", "--project", "ja-desktop"],
+        },
+      ]) {
+        const result = await run(dir, opts);
+        ok(result);
+        expect(result.stderr).toContain(
+          "e2g: did not write menu/ja (no test of it ran for variant mobile)",
+        );
+        expect(existsSync(join(dir, "site/docs/en/menu.md"))).toBe(true);
+        expect(existsSync(join(dir, "site/docs/ja/menu.md"))).toBe(false);
+        rmSync(join(dir, "site"), { recursive: true });
+      }
+    });
+
+    it("two projects with the same guideLocale and guideVariant fail the run", async () => {
+      const dir = project();
+      const result = await run(dir, { env: { GUIDES_VARIANTS: "mobile,mobile" } });
+      expect(result.code).not.toBe(0);
+      expect(existsSync(join(dir, "site"))).toBe(false);
+      expect(result.stderr).toContain(
+        'e2g: projects "en-mobile" and "en-mobile-1" both set use.guideLocale "en" and use.guideVariant "mobile"',
+      );
+    });
+
+    it("a guide project without a guideVariant beside ones with it fails the run", async () => {
+      const dir = project();
+      const result = await run(dir, { env: { ...VARIANTS, GUIDES_NO_VARIANT: "ja-mobile" } });
+      expect(result.code).not.toBe(0);
+      expect(existsSync(join(dir, "site"))).toBe(false);
+      expect(result.stderr).toContain(
+        'e2g: project "ja-mobile" sets no use.guideVariant, but project "en-desktop" does',
+      );
+    });
+
+    it("a locale without a project for every variant fails the run", async () => {
+      const dir = project();
+      const result = await run(dir, { env: { ...VARIANTS, GUIDES_DROP: "ja-mobile" } });
+      expect(result.code).not.toBe(0);
+      expect(existsSync(join(dir, "site"))).toBe(false);
+      expect(result.stderr).toContain(
+        'e2g: locale "ja" has no project with use.guideVariant "mobile"',
+      );
+    });
+  });
+
   it("guideShots off writes nothing", async () => {
     const dir = project();
     ok(await run(dir));

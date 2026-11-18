@@ -1,5 +1,5 @@
 // snippets from the README that are not whole files, kept here so `pnpm typecheck` covers them
-import { defineConfig, type Page } from "@playwright/test";
+import { defineConfig, devices, type Page } from "@playwright/test";
 import {
   expect,
   guidePage,
@@ -8,6 +8,7 @@ import {
   type GuideOptions,
   type Locale,
 } from "@tailor-platform/e2g/playwright";
+import { blocksToMarkdown } from "@tailor-platform/e2g/markdown";
 import type { GuideOutput, GuidesReporterOptions } from "@tailor-platform/e2g/playwright/reporter";
 import { output } from "./guides-output";
 
@@ -118,15 +119,47 @@ test("choose a plan", guidePage("choose-a-plan", meta), async ({ page, guide, gu
   );
 });
 
-export { config, guides, tour };
+export { config, guides, responsive, responsiveOutput, tour };
+
+declare module "@tailor-platform/e2g" {
+  interface Register {
+    variants: "desktop" | "mobile";
+  }
+}
+
+const viewports = { desktop: devices["Desktop Chrome"], mobile: devices["Pixel 7"] };
+
+const responsive = defineConfig<GuideOptions>({
+  projects: (["en", "ja"] as const).flatMap((guideLocale) =>
+    (["desktop", "mobile"] as const).map((guideVariant) => ({
+      name: `${guideLocale}-${guideVariant}`,
+      grep: /@guide/,
+      use: { ...viewports[guideVariant], guideLocale, guideVariant, guideShots: true },
+    })),
+  ),
+});
+
+const responsiveOutput: GuideOutput = {
+  path: (page) => `docs/${page.locale}/guides/${page.slug}.md`,
+  render: (page) => blocksToMarkdown(page.blocks, { media: { mobile: "(max-width: 640px)" } }),
+};
+
+test("open settings", guidePage("open-settings", meta), async ({ page, guide, guideVariant }) => {
+  await page.goto("/");
+  await guide.step({ en: "Open **Settings**.", ja: "**設定** を開きます。" }, async () => {
+    // the menu is folded on small screens; this step is not in the page
+    if (guideVariant === "mobile")
+      await test.step("open the menu", () => page.getByTestId("menu-button").click());
+    await page.getByTestId("settings-link").click();
+    await guide.shot("settings", { alt: { en: "Settings", ja: "設定" } });
+  });
+});
 
 const tour: GuideOutput = {
   path: (page) => `site/tours/${page.locale}/${page.slug}.json`,
-  render: (page, { image }) => {
+  render: (page) => {
     const steps = page.blocks.flatMap((block) =>
-      block.kind === "step"
-        ? [{ text: block.text, shots: block.shots.map((shot) => ({ ...shot, src: image(shot) })) }]
-        : [],
+      block.kind === "step" ? [{ text: block.text, shots: block.shots }] : [],
     );
     return `${JSON.stringify({ title: page.meta.title[page.locale], steps }, null, 2)}\n`;
   },

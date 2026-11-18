@@ -10,12 +10,14 @@ import {
   type Locale,
   type Meta,
   type Text,
+  type Variant,
 } from "@tailor-platform/e2g/playwright";
 import type { GuideOutput } from "@tailor-platform/e2g/playwright/reporter";
 import { assertType, type Equal } from "./equal.ts";
 
 assertType<Equal<Locale, string>>();
 assertType<Equal<Meta, unknown>>();
+assertType<Equal<Variant, string>>();
 assertType<Equal<Text, string | Record<string, string>>>();
 assertType<Equal<typeof test, typeof guideTest>>();
 assertType<Equal<typeof expect, typeof import("@playwright/test").expect>>();
