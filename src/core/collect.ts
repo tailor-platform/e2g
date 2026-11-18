@@ -1,5 +1,5 @@
 import { isDeepStrictEqual } from "node:util";
-import type { GuideRecord, Locale, Page } from "../types.js";
+import type { Block, GuideRecord, Locale, Page } from "../types.js";
 import { relativePath } from "./paths.js";
 
 export interface ExpectedTest {
@@ -61,6 +61,14 @@ function duplicates(names: string[]): string[] {
   return [...new Set(names.filter((name, i) => names.indexOf(name) !== i))];
 }
 
+const relativeTo = (rootDir: string, block: Block): Block =>
+  block.location
+    ? {
+        ...block,
+        location: { ...block.location, file: relativePath(rootDir, block.location.file) },
+      }
+    : block;
+
 function buildPage(
   id: string,
   tests: ExpectedTest[],
@@ -96,7 +104,7 @@ function buildPage(
       locale: first!.locale as Locale,
       meta,
       source: files[0]!,
-      blocks: records.flatMap((r) => r.blocks),
+      blocks: records.flatMap((r) => r.blocks.map((b) => relativeTo(rootDir, b))),
       shots: new Map(names.map((name) => [name, shots.get(name)!])),
     },
   };

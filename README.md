@@ -450,7 +450,7 @@ Records a screenshot for the running `guide.step` (`guide.shot() must be called 
 
 `name` becomes the file name, so it may contain only letters, digits, `.`, `_` and `-` (not `..`), and must be unique within the test and within the page.
 
-In a guides run, `guide.shot` waits for `highlight` and `crop` to be visible, so a guide whose UI changed fails as a test, and records the name and `alt`. The PNG itself is taken only when `guideShots` is on. In a normal e2e run, `guide.shot` only checks its arguments.
+In a guides run, `guide.shot` waits for `highlight` and `crop` to be visible, so a guide whose UI changed fails as a test, and records the name and `alt`. The PNG itself is taken only when `guideShots` is on, together with where each highlighted element is in it (`regions`). In a normal e2e run, `guide.shot` only checks its arguments.
 
 | Option           | Type                   | Default               | Meaning                                                                                                                                                                                                                                                            |
 | ---------------- | ---------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -585,13 +585,34 @@ interface Page<M = Meta> {
 ```
 
 ```ts
-type Block = { kind: "say"; text: string } | { kind: "step"; text: string; shots: Shot[] };
+type Block =
+  | { kind: "say"; text: string; location?: SourceLocation }
+  | { kind: "step"; text: string; shots: Shot[]; location?: SourceLocation };
+```
+
+```ts
+interface SourceLocation {
+  file: string;
+  line: number;
+  column: number;
+}
 ```
 
 ```ts
 interface Shot {
   name: string;
   alt: string;
+  /** The boxes of the shot's `highlight` elements, in their order. */
+  regions: Region[];
+}
+```
+
+```ts
+interface Region {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
 }
 ```
 
@@ -600,6 +621,8 @@ interface Shot {
 - `page.locale` is the project's `guideLocale`, and `page.meta` the `meta` given to `guidePage()`, untouched.
 - `page.source` is the spec file relative to `config.rootDir` (the top-level `testDir`), with `/` separators.
 - Step texts, paragraphs and `alt`s in `blocks` are already in the page's locale.
+- A block's `location` is where its `guide.step` or `guide.say` was called, or the `location` given to `guide.step`, with `file` relative to `config.rootDir` like `page.source`. A call in a helper or page object is located there, not in the spec. Use it to link a page to its test or to show the code beside it.
+- `shot.regions` has one `Region` per `highlight` locator, in the order given: the element's box in the image, as fractions of the image's width and height, so it does not depend on the device scale or on the size the image is shown at. It is measured with the `hide` elements gone, clipped to the image and rounded to 4 decimals. An element in an iframe is placed where it shows on the page. A highlight that ends up entirely outside the image, such as one scrolled out of the viewport in a shot without `crop`, fails `guide.shot`. CSS added by `style` applies after the measurement, so CSS that moves the highlighted elements moves them away from their regions.
 
 ### `blocksToMarkdown(blocks, image)`
 
@@ -607,7 +630,7 @@ Renders blocks as CommonMark: each `step` becomes a numbered list item with its 
 
 ## How writing works
 
-`guide.step` and `guide.say` attach a marker to their own step, and `guide.shot` attaches its name and `alt`, plus the PNG when `guideShots` is on. When a guide test ends, the reporter walks its last attempt's steps in start order, through hooks and helpers, and reads only those attachments: anything attached to the test directly is ignored. At the end of the run it groups the tests into pages and plans every write and delete before touching the disk.
+`guide.step` and `guide.say` attach a marker to their own step, and `guide.shot` attaches its name and `alt`, plus the PNG and the regions when `guideShots` is on. When a guide test ends, the reporter walks its last attempt's steps in start order, through hooks and helpers, and reads only those attachments: anything attached to the test directly is ignored. At the end of the run it groups the tests into pages and plans every write and delete before touching the disk.
 
 | Situation                                                                                                           | Result                                                                                                                                                                                          |
 | ------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -758,6 +781,28 @@ await guide.say({
   `,
 });
 ```
+
+### A tour over the screenshots
+
+`render` can write any format, so a page can be data for a step-by-step tour in your docs site instead of Markdown. Each shot carries the boxes of its highlighted elements:
+
+```ts
+const tour: GuideOutput = {
+  path: (page) => `site/tours/${page.locale}/${page.slug}.json`,
+  render: (page, { image }) => {
+    const steps = page.blocks.flatMap((block) =>
+      block.kind === "step"
+        ? [{ text: block.text, shots: block.shots.map((shot) => ({ ...shot, src: image(shot) })) }]
+        : [],
+    );
+    return `${JSON.stringify({ title: page.meta.title[page.locale], steps }, null, 2)}\n`;
+  },
+};
+```
+
+A region's fractions are CSS percentages: put the image in a `position: relative` box, and place a marker or a tooltip with `position: absolute`, `left: x × 100%`, `top: y × 100%`, `width: width × 100%` and `height: height × 100%`. It stays on the element at any size the image is shown at.
+
+[`examples/tour`](examples/tour) builds a click-through tour this way, with branches and the test's code shown beside each step.
 
 ### Locators in several languages
 

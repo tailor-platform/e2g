@@ -36,7 +36,7 @@ const say = (text: string): Block => ({ kind: "say", text });
 const step = (text: string, name?: string): Block => ({
   kind: "step",
   text,
-  shots: name ? [{ name, alt: name }] : [],
+  shots: name ? [{ name, alt: name, regions: [] }] : [],
 });
 
 describe("collectPages", () => {
@@ -56,6 +56,26 @@ describe("collectPages", () => {
     expect(incomplete).toEqual([]);
     expect(pages).toHaveLength(1);
     expect(pages[0]!.blocks).toEqual([say("A"), say("B"), say("C")]);
+  });
+
+  it("block locations are relative to the rootDir", () => {
+    const at = (file: string) => ({ file, line: 4, column: 3 });
+    const results = new Map([
+      [
+        "a",
+        passed([
+          { ...say("A"), location: at("/repo/e2e/intro.spec.ts") },
+          { ...step("B"), location: at("/repo/e2e/pages/members.ts") },
+          step("C"),
+        ]),
+      ],
+    ]);
+    const { pages } = collectPages([test_("a")], results, ROOT);
+    expect(pages[0]!.blocks).toEqual([
+      { ...say("A"), location: at("e2e/intro.spec.ts") },
+      { ...step("B"), location: at("e2e/pages/members.ts") },
+      step("C"),
+    ]);
   });
 
   it("meta comes from the first test", () => {

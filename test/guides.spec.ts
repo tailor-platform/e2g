@@ -1,11 +1,14 @@
 import { globSync } from "node:fs";
 import { dirname } from "node:path";
 import type { Page } from "@playwright/test";
+import type { Region } from "../src/types.ts";
 import { PNG } from "pngjs";
 import { expect, guidePage, test, type Guide, type GuideOptions } from "../src/playwright/index.ts";
 import { captureShot, type ShotOptions } from "../src/playwright/shot.ts";
 import { ANNOTATION, PNG_PREFIX, SAY, SHOT, STEP, TAG } from "../src/playwright/protocol.ts";
 import { callerLine, expectLocations, expectSteps, type StepNode } from "./steps.ts";
+
+type Box = { x: number; y: number; width: number; height: number };
 
 const SAMPLE_PAGE = `
   <body style="margin:0;font:16px sans-serif;background:#fff;color:#111">
@@ -35,10 +38,10 @@ const OPEN = { en: "Open the dashboard.", ja: "ダッシュボードを開きま
 const RED = [0xe5, 0x48, 0x4d];
 
 const stepMark = { name: STEP, contentType: "text/plain", body: "" };
-const shotInfo = (name: string, alt: string) => ({
+const shotInfo = (name: string, alt: string, regions: Region[]) => ({
   name: SHOT,
   contentType: "application/json",
-  body: JSON.stringify({ name, alt }),
+  body: JSON.stringify({ name, alt, regions }),
 });
 const png = (name: string) => ({
   name: PNG_PREFIX + name,
@@ -48,10 +51,25 @@ const png = (name: string) => ({
 const marked = () => (mode() === "plain" ? [] : [stepMark]);
 
 // what one shot attaches to its step in the running project
-function shotAttachments(name: string, alt: string) {
+function shotAttachments(name: string, alt: string, regions: Region[] = []) {
   if (mode() === "plain") return [];
-  return mode() === "shots" ? [shotInfo(name, alt), png(name)] : [shotInfo(name, alt)];
+  return mode() === "shots" ? [shotInfo(name, alt, regions), png(name)] : [shotInfo(name, alt, [])];
 }
+
+// the region a box in CSS pixels has in an image of the given CSS size, rounded as a shot rounds it
+function regionOf(box: Box, image: { width: number; height: number }, origin = { x: 0, y: 0 }) {
+  const f = (n: number) => Math.round(Math.min(1, Math.max(0, n)) * 10_000) / 10_000;
+  const x = f((box.x - origin.x) / image.width);
+  const y = f((box.y - origin.y) / image.height);
+  return {
+    x,
+    y,
+    width: f(f((box.x + box.width - origin.x) / image.width) - x),
+    height: f(f((box.y + box.height - origin.y) / image.height) - y),
+  };
+}
+
+const VIEWPORT = { width: 1280, height: 720 };
 
 function attachedPng(name: string): Buffer {
   const found = test.info().attachments.filter((a) => a.name === PNG_PREFIX + name);
@@ -198,12 +216,11 @@ test.describe("guide.step, guide.shot and guide.say", () => {
     page,
     guide,
   }) => {
+    const save = page.getByRole("button", { name: "Save changes" });
+    const saveRegion = regionOf((await save.boundingBox())!, VIEWPORT);
     await guide.say(OPEN);
     await guide.step(SAVE, async () => {
-      await guide.shot("01-save", {
-        alt: SAVE_ALT,
-        highlight: page.getByRole("button", { name: "Save changes" }),
-      });
+      await guide.shot("01-save", { alt: SAVE_ALT, highlight: save });
       await guide.shot("02-publish", { alt: "Publish" });
     });
     await guide.step("Wait.", async () => {});
@@ -219,7 +236,7 @@ test.describe("guide.step, guide.shot and guide.say", () => {
         title: shown(SAVE),
         attachments: [
           ...marked(),
-          ...shotAttachments("01-save", shown(SAVE_ALT)),
+          ...shotAttachments("01-save", shown(SAVE_ALT), [saveRegion]),
           ...shotAttachments("02-publish", "Publish"),
         ],
         steps: [],
@@ -534,7 +551,7 @@ test.describe("captureShot", () => {
     page: Page,
     opts: Omit<ShotOptions, "alt" | "page">,
     guideShot?: GuideOptions["guideShot"],
-  ) => captureShot(page, opts, guideShot);
+  ) => captureShot(page, opts, guideShot).then((c) => c.png);
 
   test("a crop is padded so the highlight's outline fits", async ({ page }) => {
     const button = page.getByRole("button", { name: "Publish" });
@@ -696,8 +713,107 @@ test.describe("captureShot", () => {
     expect(Math.abs(crop.readUInt32BE(16) - (box.width + 8))).toBeLessThanOrEqual(1);
   });
 
+  test("regions are the highlights' boxes as fractions of the viewport", async ({ page }) => {
+    const save = page.getByRole("button", { name: "Save changes" });
+    const publish = page.getByRole("button", { name: "Publish" });
+    const boxes = [(await save.boundingBox())!, (await publish.boundingBox())!];
+    const { regions } = await captureShot(page, { highlight: [save, publish] });
+    expect(regions).toEqual(boxes.map((box) => regionOf(box, VIEWPORT)));
+  });
+
+  test("a shot without highlights has no regions", async ({ page }) => {
+    const { regions } = await captureShot(page, { crop: page.locator("#card") });
+    expect(regions).toEqual([]);
+  });
+
+  test("regions of a cropped shot sit on the outlines in the image", async ({ page }) => {
+    const save = page.getByRole("button", { name: "Save changes" });
+    const publish = page.getByRole("button", { name: "Publish" });
+    const { png, regions } = await captureShot(page, { highlight: [save, publish], crop: save });
+    const width = png.readUInt32BE(16);
+    const height = png.readUInt32BE(20);
+    expect(regions).toHaveLength(2);
+    for (const region of regions) {
+      // the outline is 3px wide, 3px out from the element's edge
+      expect(pixel(png, region.x * width - 4.5, (region.y + region.height / 2) * height)).toEqual(
+        RED,
+      );
+      expect(region.x + region.width).toBeLessThanOrEqual(1);
+    }
+  });
+
+  test("regions follow the scroll position and the hidden elements", async ({ page }) => {
+    const note = page.locator("#note");
+    const card = page.locator("#card");
+    const before = (await card.boundingBox())!;
+    await page.evaluate(() => {
+      document.body.style.height = "3000px";
+      window.scrollTo(0, 40);
+    });
+    const { regions } = await captureShot(page, { highlight: note, hide: [card] });
+    // with the card hidden, the note takes its place; the page is scrolled up by 40px
+    expect(regions).toEqual([regionOf({ ...before, y: before.y - 40 }, VIEWPORT)]);
+  });
+
+  test("a region is clipped to the image", async ({ page }) => {
+    const save = page.getByRole("button", { name: "Save changes" });
+    const box = (await save.boundingBox())!;
+    const scroll = Math.round(box.y + box.height / 2);
+    await page.evaluate((y) => {
+      document.body.style.height = "3000px";
+      window.scrollTo(0, y);
+    }, scroll);
+    const { regions } = await captureShot(page, { highlight: save });
+    // the button's top half is scrolled out of the viewport
+    expect(regions).toEqual([regionOf({ ...box, y: box.y - scroll }, VIEWPORT)]);
+    expect(regions[0]!.y).toBe(0);
+  });
+
+  test("regions and crops place an element in an iframe where it shows on the page", async ({
+    page,
+  }) => {
+    await page.setContent(
+      '<body style="margin:0"><iframe style="position:absolute;left:200px;top:150px;width:600px;height:300px;border:0" srcdoc="<body style=\'margin:0\'><button style=\'margin:40px 0 0 60px;width:120px;height:40px\'>Go</button></body>"></iframe></body>',
+    );
+    const button = page.frameLocator("iframe").getByRole("button", { name: "Go" });
+    const box = (await button.boundingBox())!;
+    expect(box.x).toBeGreaterThan(200);
+    const full = await captureShot(page, { highlight: button });
+    expect(full.regions).toEqual([regionOf(box, VIEWPORT)]);
+    const { png, regions } = await captureShot(page, { highlight: button, crop: button });
+    // the crop is the button and the padding around it, not a region at the iframe's offset
+    expect(Math.abs(png.readUInt32BE(16) - (box.width + 24))).toBeLessThanOrEqual(1);
+    expect(
+      pixel(png, regions[0]!.x * png.readUInt32BE(16) - 4.5, png.readUInt32BE(20) / 2),
+    ).toEqual(RED);
+  });
+
+  test("a highlight outside the shot fails it", async ({ page }) => {
+    const save = page.getByRole("button", { name: "Save changes" });
+    await page.evaluate(() => {
+      document.body.style.height = "3000px";
+      window.scrollTo(0, 1500);
+    });
+    await expect(captureShot(page, { highlight: save })).rejects.toThrow(
+      "guide.shot() highlight 1 is outside the shot; scroll it into view or crop to it",
+    );
+    await expect(save).not.toHaveAttribute("data-guides-highlight");
+    // cropped, the shot is taken from the full page, so the same highlight is in it
+    const { regions } = await captureShot(page, { highlight: save, crop: save });
+    expect(regions[0]!.width).toBeGreaterThan(0);
+  });
+
   test.describe("at deviceScaleFactor 2", () => {
     test.use({ deviceScaleFactor: 2 });
+
+    test("regions do not depend on the device scale", async ({ page }) => {
+      const save = page.getByRole("button", { name: "Save changes" });
+      const box = (await save.boundingBox())!;
+      const device = await captureShot(page, { highlight: save });
+      const css = await captureShot(page, { highlight: save }, { screenshot: { scale: "css" } });
+      expect(device.regions).toEqual([regionOf(box, VIEWPORT)]);
+      expect(css.regions).toEqual(device.regions);
+    });
 
     test("a shot is taken at device scale by default", async ({ page }) => {
       expect((await capture(page, {})).readUInt32BE(16)).toBe(2560);
