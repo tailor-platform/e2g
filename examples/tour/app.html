@@ -2,6 +2,7 @@
 <html>
   <head>
     <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
     <title>Acme</title>
     <style>
       [hidden] {
@@ -108,6 +109,35 @@
         display: flex;
         justify-content: flex-end;
         gap: 8px;
+      }
+      @media (max-width: 640px) {
+        nav {
+          padding: 14px 16px;
+        }
+        nav a {
+          display: none;
+        }
+        main {
+          margin: 20px auto;
+          padding: 0 16px;
+        }
+        table {
+          font-size: 14px;
+        }
+        td,
+        th {
+          padding: 10px 8px;
+        }
+        td:first-child,
+        th:first-child {
+          display: none;
+        }
+        dialog {
+          width: auto;
+          max-width: none;
+          margin: auto 16px;
+          padding: 20px;
+        }
       }
     </style>
   </head>
