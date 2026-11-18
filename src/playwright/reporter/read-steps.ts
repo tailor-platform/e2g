@@ -1,11 +1,11 @@
 import type { TestStep } from "@playwright/test/reporter";
-import type { Block, Region, Shot } from "../../types.js";
+import type { Block, Region, TakenShot } from "../../types.js";
 import { readFile } from "../../core/io.js";
 import { real } from "../../core/real.js";
 import { PNG_PREFIX, SAY, SHOT, STEP } from "../protocol.js";
 
 export interface ReadSteps {
-  blocks: Block[];
+  blocks: Block<TakenShot>[];
   shots: Map<string, Buffer>;
   /** Why a guide attachment could not be used; the test's page is then incomplete. */
   problem?: string;
@@ -28,12 +28,12 @@ const isRegion = (value: unknown): value is Region =>
 const areRegions = (value: unknown): value is Region[] =>
   Array.isArray(value) && value.every(isRegion);
 
-function shotOf(attachment: Attachment): Shot | undefined {
+function shotOf(attachment: Attachment): TakenShot | undefined {
   const data = body(attachment);
   if (!data) return undefined;
   try {
     const { name, alt, regions } = JSON.parse(data.toString("utf8")) as Partial<
-      Record<keyof Shot, unknown>
+      Record<keyof TakenShot, unknown>
     >;
     return typeof name === "string" && typeof alt === "string" && areRegions(regions)
       ? { name, alt, regions }
@@ -66,7 +66,7 @@ export function readSteps(steps: readonly TestStep[]): ReadSteps {
       const attachments = step.category === "test.step" ? step.attachments : [];
       const say = attachments.find((a) => a.name === SAY);
       if (attachments.some((a) => a.name === STEP)) {
-        const shots: Shot[] = [];
+        const shots: TakenShot[] = [];
         for (const attachment of attachments) {
           if (attachment.name === SHOT) {
             const shot = shotOf(attachment);

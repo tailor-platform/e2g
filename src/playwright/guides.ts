@@ -173,6 +173,7 @@ function createGuide({ info, page, locale, shots, shotSettings }: GuideContext):
 
 export const guideTest = base.extend<{ guide: Guide } & GuideOptions>({
   guideLocale: [undefined, { option: true }],
+  guideVariant: [undefined, { option: true }],
   guideShots: [false, { option: true }],
   guideShot: [{}, { option: true }],
   guideClock: ["fixed", { option: true }],

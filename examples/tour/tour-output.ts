@@ -46,11 +46,7 @@ function codeOf(block: Block, files: Record<string, string>, shot?: string): Cod
 }
 
 // one stop per shot; a step without shots and a paragraph are stops without an image
-function stops(
-  page: Page,
-  image: (shot: { name: string }) => string,
-  files: Record<string, string>,
-) {
+function stops(page: Page, files: Record<string, string>) {
   let n = 0;
   return page.blocks.flatMap((block) => {
     if (block.kind === "say")
@@ -58,14 +54,14 @@ function stops(
     n += 1;
     if (block.shots.length === 0)
       return [{ kind: "step", n, text: block.text, code: codeOf(block, files) }];
-    return block.shots.map((shot) => ({
+    // an image per screen size, each with its own regions; the viewer picks the one that fits
+    return block.shots.map(({ name, alt, images }) => ({
       kind: "step",
       n,
       text: block.text,
-      src: image(shot),
-      alt: shot.alt,
-      regions: shot.regions,
-      code: codeOf(block, files, shot.name),
+      alt,
+      images,
+      code: codeOf(block, files, name),
     }));
   });
 }
@@ -74,7 +70,7 @@ const escapeHtml = (text: string) => text.replace(/[&<]/g, (c) => (c === "&" ? "
 
 export const output: GuideOutput = {
   path: (page) => `tours/${page.locale}/${page.slug}.html`,
-  render: (page, { image }) => {
+  render: (page) => {
     const { title, next = [], parent } = page.meta;
     const files: Record<string, string> = {
       [page.source]: readFileSync(join(ROOT, page.source), "utf8"),
@@ -83,7 +79,7 @@ export const output: GuideOutput = {
     const data = JSON.stringify({
       title,
       source: page.source,
-      stops: stops(page, image, files),
+      stops: stops(page, files),
       files,
       next: next.map((branch) => ({ ...branch, href: `${branch.slug}.html` })),
       parent: parent && { title: parent.title, href: `${parent.slug}.html#choose` },

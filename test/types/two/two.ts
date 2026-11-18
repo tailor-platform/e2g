@@ -7,12 +7,15 @@ import {
   type Locale,
   type Meta,
   type Text,
+  type Variant,
 } from "@tailor-platform/e2g/playwright";
+import { blocksToMarkdown } from "@tailor-platform/e2g/markdown";
 import type { GuideOutput, Page } from "@tailor-platform/e2g/playwright/reporter";
 import { assertType, type Equal } from "../equal.ts";
 
 assertType<Equal<Locale, "en" | "ja">>();
 assertType<Equal<Text, Record<"en" | "ja", string>>>();
+assertType<Equal<Variant, "desktop" | "mobile">>();
 assertType<Equal<Meta, { title: Text; sidebar?: { order: number } }>>();
 
 const test = mergeTests(base, guideTest);
@@ -20,8 +23,9 @@ const test = mergeTests(base, guideTest);
 test(
   "two locales",
   guidePage("two", { title: { en: "Rename", ja: "名前を変える" }, sidebar: { order: 1 } }),
-  async ({ guide, guideLocale }) => {
+  async ({ guide, guideLocale, guideVariant }) => {
     assertType<Equal<typeof guideLocale, "en" | "ja" | undefined>>();
+    assertType<Equal<typeof guideVariant, "desktop" | "mobile" | undefined>>();
     await guide.say({ en: "Hello.", ja: "こんにちは。" });
     // @ts-expect-error the ja text is missing
     await guide.say({ en: "Hello." });
@@ -43,6 +47,13 @@ const output: GuideOutput = {
   path: (page) => `${page.locale}/${page.slug}.md`,
   render: (page) => {
     assertType<Equal<typeof page, Page<Meta>>>();
+    for (const block of page.blocks)
+      if (block.kind === "step")
+        for (const image of block.shots.flatMap((s) => s.images))
+          assertType<Equal<typeof image.variant, "desktop" | "mobile" | undefined>>();
+    blocksToMarkdown(page.blocks, { media: { mobile: "(max-width: 640px)" } });
+    // @ts-expect-error tablet is not a registered variant
+    blocksToMarkdown(page.blocks, { media: { tablet: "(max-width: 1024px)" } });
     const title: string = page.meta.title[page.locale];
     const order: number | undefined = page.meta.sidebar?.order;
     return `${title} ${order}`;
@@ -58,3 +69,9 @@ defineConfig<GuideOptions>({
 defineConfig<GuideOptions>({ use: { guideLocale: "fr" } });
 // @ts-expect-error fr is not a registered locale
 defineConfig<GuideOptions>({ projects: [{ use: { guideLocale: "fr" } }] });
+
+defineConfig<GuideOptions>({
+  projects: [{ name: "en-mobile", use: { guideLocale: "en", guideVariant: "mobile" } }],
+});
+// @ts-expect-error tablet is not a registered variant
+defineConfig<GuideOptions>({ projects: [{ use: { guideLocale: "en", guideVariant: "tablet" } }] });

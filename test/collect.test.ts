@@ -1,7 +1,12 @@
 import { win32 } from "node:path";
 import { describe, expect, it } from "vitest";
-import { collectPages, type ExpectedTest, type TestOutcome } from "../src/core/collect.js";
-import type { Block, GuideRecord } from "../src/types.js";
+import {
+  collectPages,
+  type CollectedShot,
+  type ExpectedTest,
+  type TestOutcome,
+} from "../src/core/collect.js";
+import type { Block, GuideRecord, TakenShot } from "../src/types.js";
 
 const ROOT = "/repo";
 const png = (s: string) => Buffer.from(s);
@@ -12,6 +17,7 @@ function test_(id: string, over: Partial<ExpectedTest> = {}): ExpectedTest {
     slug: "intro",
     locale: "en",
     locales: ["en"],
+    variants: [],
     file: "/repo/e2e/intro.spec.ts",
     line: 1,
     column: 1,
@@ -19,7 +25,10 @@ function test_(id: string, over: Partial<ExpectedTest> = {}): ExpectedTest {
   };
 }
 
-function passed(blocks: Block[], opts: { meta?: unknown; shots?: string[] } = {}): TestOutcome {
+function passed(
+  blocks: Block<TakenShot>[],
+  opts: { meta?: unknown; shots?: string[] } = {},
+): TestOutcome {
   const record: GuideRecord<unknown> = {
     schemaVersion: 1,
     slug: "intro",
@@ -32,8 +41,8 @@ function passed(blocks: Block[], opts: { meta?: unknown; shots?: string[] } = {}
   return { ok: true, record, shots: new Map(names.map((n) => [n, png(n)])) };
 }
 
-const say = (text: string): Block => ({ kind: "say", text });
-const step = (text: string, name?: string): Block => ({
+const say = (text: string): Block<TakenShot> => ({ kind: "say", text });
+const step = (text: string, name?: string): Block<TakenShot> => ({
   kind: "step",
   text,
   shots: name ? [{ name, alt: name, regions: [] }] : [],
@@ -155,7 +164,8 @@ describe("collectPages", () => {
     const results = new Map([["a", passed([step("Open", "menu")])]]);
     results.get("a")!.shots.set("menu", png("retry"));
     const { pages } = collectPages([test_("a")], results, ROOT);
-    expect(pages[0]!.shots.get("menu")).toEqual(png("retry"));
+    const [shot] = (pages[0]!.blocks[0] as { shots: CollectedShot[] }).shots;
+    expect(shot!.images[0]!.png).toEqual(png("retry"));
   });
 
   it("a page missing a locale is incomplete", () => {
@@ -207,5 +217,129 @@ describe("collectPages", () => {
       "C:\\repo",
     );
     expect(windows.pages[0]!.source).toBe("e2e/deep/intro.spec.ts");
+  });
+
+  describe("variants", () => {
+    const variants = ["desktop", "mobile"];
+    const in_ = (variant: string, id = variant, over: Partial<ExpectedTest> = {}) =>
+      test_(id, { variant, variants, ...over });
+    const region = (x: number) => ({ x, y: 0, width: 0.1, height: 0.1 });
+    function taken(variant: string, blocks: Block<TakenShot>[], x = 0): TestOutcome {
+      const outcome = passed(blocks);
+      for (const name of outcome.shots.keys()) outcome.shots.set(name, png(`${variant}-${name}`));
+      outcome.record.blocks = blocks.map((b) =>
+        b.kind === "step"
+          ? { ...b, shots: b.shots.map((s) => ({ ...s, regions: [region(x)] })) }
+          : b,
+      );
+      return outcome;
+    }
+
+    it("joins the variants of a page into one, with an image per variant in the variants' order", () => {
+      const expected = [in_("mobile"), in_("desktop")];
+      const results = new Map([
+        ["mobile", taken("mobile", [say("Hi"), step("Open", "menu")], 0.5)],
+        ["desktop", taken("desktop", [say("Hi"), step("Open", "menu")], 0.2)],
+      ]);
+      const { pages, errors, incomplete } = collectPages(expected, results, ROOT);
+      expect(errors).toEqual([]);
+      expect(incomplete).toEqual([]);
+      expect(pages).toHaveLength(1);
+      expect(pages[0]!.blocks).toEqual([
+        say("Hi"),
+        {
+          kind: "step",
+          text: "Open",
+          shots: [
+            {
+              name: "menu",
+              alt: "menu",
+              images: [
+                { variant: "desktop", regions: [region(0.2)], png: png("desktop-menu") },
+                { variant: "mobile", regions: [region(0.5)], png: png("mobile-menu") },
+              ],
+            },
+          ],
+        },
+      ]);
+    });
+
+    it("a page without variants has one image without a variant", () => {
+      const results = new Map([["a", passed([step("Open", "menu")])]]);
+      const { pages } = collectPages([test_("a")], results, ROOT);
+      const [shot] = (pages[0]!.blocks[0] as { shots: CollectedShot[] }).shots;
+      expect(shot!.images).toEqual([{ regions: [], png: png("menu") }]);
+    });
+
+    it("a variant that did not run leaves the page incomplete", () => {
+      const results = new Map([["desktop", taken("desktop", [say("Hi")])]]);
+      const { pages, incomplete } = collectPages([in_("desktop")], results, ROOT);
+      expect(pages).toEqual([]);
+      expect(incomplete).toEqual(["intro/en (no test of it ran for variant mobile)"]);
+    });
+
+    it("a test that failed in one variant leaves the page incomplete", () => {
+      const results = new Map<string, TestOutcome>([
+        ["desktop", taken("desktop", [say("Hi")])],
+        ["mobile", { ...taken("mobile", [say("Hi")]), ok: false }],
+      ]);
+      const { pages, incomplete, errors } = collectPages(
+        [in_("desktop"), in_("mobile")],
+        results,
+        ROOT,
+      );
+      expect(errors).toEqual([]);
+      expect(pages).toEqual([]);
+      expect(incomplete).toEqual([
+        "intro/en (a test failed, was skipped or did not run in variant mobile)",
+      ]);
+    });
+
+    it("steps that differ between variants are an error", () => {
+      const results = new Map([
+        ["desktop", taken("desktop", [step("Open", "menu")])],
+        ["mobile", taken("mobile", [step("Tap the menu", "menu")])],
+      ]);
+      const { pages, errors } = collectPages([in_("desktop"), in_("mobile")], results, ROOT);
+      expect(pages).toEqual([]);
+      expect(errors).toEqual([
+        "page intro/en has different steps, paragraphs or shots in variants desktop and mobile",
+      ]);
+    });
+
+    it("a shot taken in only one variant is an error", () => {
+      const results = new Map([
+        ["desktop", taken("desktop", [step("Open")])],
+        ["mobile", taken("mobile", [step("Open", "menu")])],
+      ]);
+      const { errors } = collectPages([in_("desktop"), in_("mobile")], results, ROOT);
+      expect(errors).toEqual([
+        "page intro/en has different steps, paragraphs or shots in variants desktop and mobile",
+      ]);
+    });
+
+    it("meta that differs between variants is an error", () => {
+      const desktop = taken("desktop", [say("Hi")]);
+      const mobile = taken("mobile", [say("Hi")]);
+      mobile.record.meta = { title: "Other" };
+      const results = new Map([
+        ["desktop", desktop],
+        ["mobile", mobile],
+      ]);
+      const { errors } = collectPages([in_("desktop"), in_("mobile")], results, ROOT);
+      expect(errors).toEqual(["page intro/en has differing meta in variants desktop and mobile"]);
+    });
+
+    it("block locations come from the first variant", () => {
+      const at = (line: number) => ({ file: "/repo/e2e/intro.spec.ts", line, column: 3 });
+      const results = new Map([
+        ["desktop", taken("desktop", [{ ...say("Hi"), location: at(4) }])],
+        ["mobile", taken("mobile", [{ ...say("Hi"), location: at(9) }])],
+      ]);
+      const { pages } = collectPages([in_("desktop"), in_("mobile")], results, ROOT);
+      expect(pages[0]!.blocks).toEqual([
+        { ...say("Hi"), location: { file: "e2e/intro.spec.ts", line: 4, column: 3 } },
+      ]);
+    });
   });
 });

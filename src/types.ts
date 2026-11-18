@@ -1,8 +1,10 @@
 // what a project registers with `declare module "@tailor-platform/e2g" { interface Register { ... } }`:
-// `locales`, the union of its guide locales, and `meta`, the meta its guide pages take
+// `locales`, the union of its guide locales, `variants`, the union of its guide variants,
+// and `meta`, the meta its guide pages take
 export interface Register {}
 
 export type Locale = Register extends { locales: infer L extends string } ? L : string;
+export type Variant = Register extends { variants: infer V extends string } ? V : string;
 export type Meta = Register extends { meta: infer M } ? M : unknown;
 
 type IsUnion<T, U = T> = T extends unknown ? ([U] extends [T] ? false : true) : never;
@@ -22,11 +24,27 @@ export interface Region {
   height: number;
 }
 
+// a shot as one test run took it, before the variants of its page are put together
+export interface TakenShot {
+  name: string;
+  alt: string;
+  regions: Region[];
+}
+
+export interface ShotImage {
+  /** The `guideVariant` of the project that took it; absent when no project sets one. */
+  variant?: Variant;
+  /** The PNG's path relative to the page's directory, with `/` separators. */
+  src: string;
+  /** The boxes of the shot's `highlight` elements in this image, in their order. */
+  regions: Region[];
+}
+
 export interface Shot {
   name: string;
   alt: string;
-  /** The boxes of the shot's `highlight` elements, in their order. */
-  regions: Region[];
+  /** One image per variant, in the order of the projects. */
+  images: ShotImage[];
 }
 
 // where a guide.step or guide.say was called; `file` is relative to the config's rootDir, with `/` separators
@@ -36,16 +54,16 @@ export interface SourceLocation {
   column: number;
 }
 
-export type Block =
+export type Block<S = Shot> =
   | { kind: "say"; text: string; location?: SourceLocation }
-  | { kind: "step"; text: string; shots: Shot[]; location?: SourceLocation };
+  | { kind: "step"; text: string; shots: S[]; location?: SourceLocation };
 
 export interface GuideRecord<M = unknown> {
   schemaVersion: 1;
   slug: string;
   locale: string;
   meta: M;
-  blocks: Block[];
+  blocks: Block<TakenShot>[];
 }
 
 export interface Page<M = Meta> {

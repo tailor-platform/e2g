@@ -2,32 +2,31 @@ import { win32 } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { CollectedPage } from "../src/core/collect.js";
 import { plan, type PlanInput } from "../src/core/plan.js";
-import type { GuideOutput, Manifest } from "../src/core/types.js";
-import type { Block, Page } from "../src/types.js";
+import type { GuideOutput, Manifest, PageInfo } from "../src/core/types.js";
+import type { Page } from "../src/types.js";
 
 const png = (s: string) => Buffer.from(s);
-const step = (name: string): Block => ({
-  kind: "step",
-  text: name,
-  shots: [{ name, alt: name, regions: [] }],
-});
-
 function page(slug: string, shots: string[] = ["menu"], locale = "en"): CollectedPage {
   return {
     slug,
     locale,
     meta: {},
     source: `e2e/${slug}.spec.ts`,
-    blocks: shots.map(step),
-    shots: new Map(shots.map((n) => [n, png(`${slug}-${n}`)])),
+    blocks: shots.map((name) => ({
+      kind: "step",
+      text: name,
+      shots: [{ name, alt: name, images: [{ regions: [], png: png(`${slug}-${name}`) }] }],
+    })),
   };
 }
 
 const output: GuideOutput<unknown> = {
   path: (p) => `/site/docs/${p.locale}/${p.slug}.md`,
-  render: (p, ctx) =>
+  render: (p) =>
     p.blocks
-      .map((b) => (b.kind === "step" ? b.shots.map((s) => ctx.image(s)).join("\n") : b.text))
+      .map((b) =>
+        b.kind === "step" ? b.shots.flatMap((s) => s.images.map((i) => i.src)).join("\n") : b.text,
+      )
       .join("\n"),
 };
 
@@ -41,7 +40,8 @@ function input(over: Partial<PlanInput> = {}): PlanInput {
     incomplete: [],
     errors: [],
     output,
-    shotPath: (p: Page<unknown>, name: string) => `/site/assets/${p.locale}/${p.slug}/${name}.png`,
+    shotPath: (p: PageInfo<unknown>, name: string, variant?: string) =>
+      `/site/assets/${p.locale}/${p.slug}/${variant ? `${variant}/` : ""}${name}.png`,
     manifestDir: "/site/docs",
     manifest: empty,
     current: () => null,
@@ -269,21 +269,84 @@ describe("plan", () => {
     ]);
   });
 
-  it("output receives a plain page without shots", () => {
-    const seen: object[] = [];
+  it("output receives a page whose images have a src and no PNG data", () => {
+    const paths: PageInfo<unknown>[] = [];
+    const seen: Page<unknown>[] = [];
     plan(
       input({
         output: {
-          path: (p) => (seen.push(p), output.path(p)),
-          render: (p, ctx) => (seen.push(p), output.render(p, ctx)),
+          path: (p) => (paths.push(p), output.path(p)),
+          render: (p) => (seen.push(p), output.render(p)),
         },
       }),
     );
-    expect(seen.length).toBeGreaterThanOrEqual(2);
+    expect(paths.map((p) => Object.keys(p).sort())).toEqual([["locale", "meta", "slug", "source"]]);
+    expect(seen).toHaveLength(1);
     for (const p of seen) {
-      expect(p).not.toHaveProperty("shots");
       expect(Object.keys(p).sort()).toEqual(["blocks", "locale", "meta", "slug", "source"]);
+      expect(p.blocks).toEqual([
+        {
+          kind: "step",
+          text: "menu",
+          shots: [
+            {
+              name: "menu",
+              alt: "menu",
+              images: [{ src: "../../assets/en/intro/menu.png", regions: [] }],
+            },
+          ],
+        },
+      ]);
     }
+  });
+
+  it("writes one PNG per variant, at the shot path of its variant", () => {
+    const region = { x: 0.1, y: 0.2, width: 0.3, height: 0.4 };
+    const responsive: CollectedPage = {
+      ...page("intro"),
+      blocks: [
+        {
+          kind: "step",
+          text: "Open",
+          shots: [
+            {
+              name: "menu",
+              alt: "Menu",
+              images: [
+                { variant: "desktop", regions: [], png: png("d") },
+                { variant: "mobile", regions: [region], png: png("m") },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+    const seen: Page<unknown>[] = [];
+    const result = plan(
+      input({
+        pages: [responsive],
+        output: { ...output, render: (p) => (seen.push(p), output.render(p)) },
+      }),
+    );
+    expect(result.ops).toEqual([
+      {
+        op: "write",
+        path: "/site/docs/en/intro.md",
+        data: "../../assets/en/intro/desktop/menu.png\n../../assets/en/intro/mobile/menu.png",
+      },
+      { op: "write", path: "/site/assets/en/intro/desktop/menu.png", data: png("d") },
+      { op: "write", path: "/site/assets/en/intro/mobile/menu.png", data: png("m") },
+    ]);
+    expect(seen[0]!.blocks[0]).toMatchObject({
+      shots: [
+        {
+          images: [
+            { variant: "desktop", src: "../../assets/en/intro/desktop/menu.png", regions: [] },
+            { variant: "mobile", src: "../../assets/en/intro/mobile/menu.png", regions: [region] },
+          ],
+        },
+      ],
+    });
   });
 
   it("two pages with the same path is an error", () => {
@@ -301,7 +364,40 @@ describe("plan", () => {
     ]);
   });
 
-  it("image() is relative from the page's directory", () => {
+  it("a page that writes one path twice is an error", () => {
+    const responsive: CollectedPage = {
+      ...page("intro"),
+      blocks: [
+        {
+          kind: "step",
+          text: "Open",
+          shots: [
+            {
+              name: "menu",
+              alt: "Menu",
+              images: [
+                { variant: "desktop", regions: [], png: png("d") },
+                { variant: "mobile", regions: [], png: png("m") },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+    const result = plan(
+      input({
+        pages: [responsive],
+        shotPath: (p, name) => `/site/assets/${p.locale}/${p.slug}/${name}.png`,
+      }),
+    );
+    expect(result.ops).toEqual([]);
+    expect(result.manifest).toBeNull();
+    expect(result.errors).toEqual([
+      "wrote no guide pages because page intro/en writes /site/assets/en/intro/menu.png more than once; give each variant's shots their own path",
+    ]);
+  });
+
+  it("an image's src is relative to the page's directory", () => {
     const result = plan(
       input({
         output: { ...output, path: (p) => `/site/docs/guides/${p.locale}/deep/${p.slug}.md` },

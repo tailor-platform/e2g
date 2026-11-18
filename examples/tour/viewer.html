@@ -927,6 +927,11 @@
       const md = (s) => esc(s).replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
       const plain = (s) => s.replace(/\*\*/g, "");
       const pct = (n) => (n * 100).toFixed(3) + "%";
+      // the mobile shots on a screen as narrow as a phone, the desktop ones elsewhere
+      const narrow = matchMedia("(max-width: 640px)");
+      const imageOf = (s) =>
+        s.images.find((im) => im.variant === (narrow.matches ? "mobile" : "desktop")) ||
+        s.images[0];
 
       // the opening paragraphs make the start screen; every other block is a stop of the tour
       const intro = [];
@@ -1213,14 +1218,15 @@
       }
 
       function shotView(s) {
+        const image = imageOf(s);
         const mat = document.createElement("div");
         mat.className = "mat";
         const stage = document.createElement("div");
         stage.className = "stage";
         mat.append(stage);
         stage.innerHTML =
-          '<img alt="' + esc(s.alt) + '" src="' + esc(s.src) + '" draggable="false">';
-        const regions = s.regions || [];
+          '<img alt="' + esc(s.alt) + '" src="' + esc(image.src) + '" draggable="false">';
+        const regions = image.regions;
         const holes = regions
           .map(
             (r) =>
@@ -1329,7 +1335,7 @@
         else if (i === END) view = DATA.next.length ? choosePanel() : donePanel();
         else {
           const s = STOPS[i];
-          view = s.kind === "say" ? notePanel(s) : s.src ? shotView(s) : textStep(s);
+          view = s.kind === "say" ? notePanel(s) : s.images ? shotView(s) : textStep(s);
         }
         $("view").replaceChildren(view);
       }
@@ -1373,6 +1379,7 @@
           : matchMedia("(prefers-color-scheme: dark)").matches;
         root.dataset.theme = dark ? "light" : "dark";
       };
+      narrow.addEventListener("change", render);
       if (!intro.length && i === START) i = 0;
       render();
     </script>

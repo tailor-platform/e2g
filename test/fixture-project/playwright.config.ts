@@ -1,5 +1,5 @@
 import { defineConfig } from "@playwright/test";
-import type { GuideOptions, Locale } from "@tailor-platform/e2g/playwright";
+import type { GuideOptions, Locale, Variant } from "@tailor-platform/e2g/playwright";
 import { blocksToMarkdown } from "@tailor-platform/e2g/markdown";
 import type { GuideOutput, GuidesReporterOptions } from "@tailor-platform/e2g/playwright/reporter";
 
@@ -7,9 +7,10 @@ const env = process.env;
 
 const output: GuideOutput = {
   path: (page) => `site/docs/${page.locale}/${page.slug}.md`,
-  render: (page, { image }) => {
+  render: (page) => {
     if (env.GUIDES_RENDER_THROWS === "1") throw new Error("render is broken");
-    return `<!-- generated from ${page.source} -->\n\n# ${page.meta.title[page.locale]}\n\n${blocksToMarkdown(page.blocks, image)}`;
+    const body = blocksToMarkdown(page.blocks, { media: { mobile: "(max-width: 640px)" } });
+    return `<!-- generated from ${page.source} -->\n\n# ${page.meta.title[page.locale]}\n\n${body}`;
   },
 };
 
@@ -21,6 +22,30 @@ const guides: GuidesReporterOptions = {
 };
 
 const locales = (env.GUIDES_LOCALES ?? "en,ja").split(",") as Locale[];
+const variants = env.GUIDES_VARIANTS?.split(",") as Variant[] | undefined;
+const devices: Record<string, object> = {
+  mobile: { viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true },
+};
+const listed = (name: string, list = "") => list.split(",").includes(name);
+
+function project(locale: Locale, i: number, variant?: Variant, j = 0) {
+  const base = locales.indexOf(locale) === i ? locale : `${locale}-${i}`;
+  const suffix = variants?.indexOf(variant!) === j ? variant : `${variant}-${j}`;
+  const name = variant === undefined ? base : `${base}-${suffix}`;
+  return {
+    name,
+    ...(listed(name, env.GUIDES_SKIP) ? { testIgnore: "**/*" } : {}),
+    use: {
+      browserName: "chromium" as const,
+      ...(variant === undefined ? {} : devices[variant]),
+      ...(env.GUIDES_NO_LOCALE === "1" ? {} : { guideLocale: locale }),
+      ...(variant === undefined || listed(name, env.GUIDES_NO_VARIANT)
+        ? {}
+        : { guideVariant: variant }),
+      guideShots: env.GUIDES_SHOTS !== "0",
+    },
+  };
+}
 
 // a config for writing guides: only the @guide tests, one project per locale
 export default defineConfig<GuideOptions>({
@@ -35,13 +60,11 @@ export default defineConfig<GuideOptions>({
     ["@tailor-platform/e2g/playwright/reporter", guides],
     ...(env.GUIDES_LOCATIONS ? [["./step-locations.ts"] as const] : []),
   ],
-  projects: locales.map((locale, i) => ({
-    name: locales.indexOf(locale) === i ? locale : `${locale}-${i}`,
-    ...(env.GUIDES_SKIP === locale ? { testIgnore: "**/*" } : {}),
-    use: {
-      browserName: "chromium",
-      ...(env.GUIDES_NO_LOCALE === "1" ? {} : { guideLocale: locale }),
-      guideShots: env.GUIDES_SHOTS !== "0",
-    },
-  })),
+  projects: locales
+    .flatMap((locale, i) =>
+      variants
+        ? variants.map((variant, j) => project(locale, i, variant, j))
+        : [project(locale, i)],
+    )
+    .filter((p) => !listed(p.name, env.GUIDES_DROP)),
 });

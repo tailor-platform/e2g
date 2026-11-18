@@ -2,9 +2,12 @@ import type { Meta, Page } from "../types.js";
 
 export type RunScope = { partial: false } | { partial: true; reason: string };
 
+// a page as known before its images are placed, which depends on where the page goes
+export type PageInfo<M = Meta> = Omit<Page<M>, "blocks">;
+
 export interface GuideOutput<M = Meta> {
-  path(page: Page<M>): string;
-  render(page: Page<M>, ctx: { image(shot: { name: string }): string }): string;
+  path(page: PageInfo<M>): string;
+  render(page: Page<M>): string;
 }
 
 export interface Manifest {

@@ -1,5 +1,5 @@
 import { fileURLToPath } from "node:url";
-import { defineConfig } from "@playwright/test";
+import { defineConfig, devices } from "@playwright/test";
 import type { GuideOptions } from "@tailor-platform/e2g/playwright";
 import type { GuidesReporterOptions } from "@tailor-platform/e2g/playwright/reporter";
 import { output } from "./tour-output.ts";
@@ -19,17 +19,23 @@ export default defineConfig<GuideOptions>({
   testDir: "tests",
   forbidOnly: true,
   reporter: [["list"], [reporter, guides]],
+  use: {
+    guideLocale: "en",
+    guideShots: true,
+    // the tour draws its own highlight over the shot
+    guideShot: { highlight: "outline:none" },
+  },
+  // one project per screen size; the tour shows the shots of the one that fits the reader's screen
   projects: [
     {
-      name: "en",
+      name: "en-desktop",
       grep: /@guide/,
-      use: {
-        browserName: "chromium",
-        guideLocale: "en",
-        guideShots: true,
-        // the tour draws its own highlight over the shot
-        guideShot: { highlight: "outline:none" },
-      },
+      use: { ...devices["Desktop Chrome"], guideVariant: "desktop" },
+    },
+    {
+      name: "en-mobile",
+      grep: /@guide/,
+      use: { ...devices["Pixel 7"], guideVariant: "mobile" },
     },
   ],
 });

@@ -1,5 +1,5 @@
 import type { ScreenshotSettings } from "./shot.js";
-import type { Locale } from "../types.js";
+import type { Locale, Variant } from "../types.js";
 
 export interface GuideShotSettings {
   highlight?: string;
@@ -12,6 +12,8 @@ export interface GuideShotSettings {
 export interface GuideOptions {
   /** The locale this project writes guides in. Without it the guide calls only check their arguments. */
   guideLocale?: Locale;
+  /** Which image of each shot this project takes, such as a viewport or a color scheme. Pages are shared by the variants of a locale. */
+  guideVariant?: Variant;
   /** Whether shots take screenshots. */
   guideShots: boolean;
   guideShot: GuideShotSettings;

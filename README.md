@@ -18,6 +18,7 @@ e2g makes them one artifact:
 - **Docs that break when the UI breaks.** Steps come from the test, so a UI change that invalidates a guide fails CI instead of quietly shipping wrong docs.
 - **Screenshots that maintain themselves.** Highlighted, cropped and masked shots are retaken on every docs run, and rewritten only when the screen really changed.
 - **Every locale, checked by the compiler.** One test writes a page per locale, and a missing translation is a type error.
+- **Every screen size in one page.** Run the same test on desktop and mobile, and each screenshot becomes a `<picture>` that shows the one for the reader's screen.
 - **Free in your normal e2e run.** Without a guide locale the same test runs as a plain test: nothing is attached and no screenshot is taken.
 
 ## How it works
@@ -132,6 +133,7 @@ The two PNGs land in `docs/assets/guides/en/invite-a-teammate/`, the button outl
 
 - **Plain Playwright tests.** `guidePage()` returns the test's details (a tag and an annotation), and `guide` is a fixture, so a guide is a `test()` like any other, with your fixtures, hooks and page objects. Only `guide.step`s become numbered steps; `test.step`s and the steps of your page objects stay out of the page.
 - **One test, every locale, checked by the compiler.** Each locale is a project with `use.guideLocale`. Register your locales once, and every step, paragraph and alt text must have all of them, or it is a type error. Playwright does not type-check your tests, so run `tsc --noEmit` in CI to catch a missing translation.
+- **Variants of every screenshot.** A project's `guideVariant`, such as `"mobile"` or `"dark"`, takes its own image of each shot. The variants of a locale share one page, and a variant whose steps differ fails the run. See [Responsive screenshots](#responsive-screenshots).
 - **Any number of screenshots per step.** Each image sits under the instruction it illustrates, and in guide runs `guide.shot` fails if the elements it points at are not visible.
 - **Highlight, crop, mask and hide.** Outline elements with CSS, crop to a region with padding that keeps the outline, mask sensitive values, leave out elements other tests created, and add CSS per shot.
 - **A stable clock.** Guide runs freeze `Date.now()` before the first page opens in tests whose `test` comes from `guideTest` (directly or merged), so "5 minutes ago" and today's date do not change every image.
@@ -216,7 +218,7 @@ import { stringify } from "yaml";
 
 export const output: GuideOutput = {
   path: (page) => `docs/${page.locale}/guides/${page.slug}.md`,
-  render: (page, { image }) => {
+  render: (page) => {
     const frontMatter = {
       title: page.meta.title[page.locale],
       description: page.meta.description[page.locale],
@@ -224,7 +226,7 @@ export const output: GuideOutput = {
     return [
       `---\n${stringify(frontMatter)}---`,
       `<!-- Generated from tests/${page.source}. Edit the test, not this page. -->`,
-      blocksToMarkdown(page.blocks, image),
+      blocksToMarkdown(page.blocks),
     ].join("\n\n");
   },
 };
@@ -372,24 +374,25 @@ With one locale, that is the whole change: titles stay plain strings and your lo
 
 ### Exports
 
-| Import                                     | Exports                                                                                                                                                                                                               |
-| ------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `@tailor-platform/e2g`                     | types only: `Register`, `Locale`, `Meta`, `Text`, `Page`, `Block`, `Shot`, `GuideOutput`                                                                                                                              |
-| `@tailor-platform/e2g/markdown`            | `blocksToMarkdown`                                                                                                                                                                                                    |
-| `@tailor-platform/e2g/playwright`          | `guideTest`, `test` (the same object), `expect` (Playwright's), `guidePage`; types `Guide`, `GuideStepDetails`, `GuideOptions`, `GuideShotSettings`, `ShotOptions`, `Locale`, `Meta`, `Text`, `Page`, `Block`, `Shot` |
-| `@tailor-platform/e2g/playwright/reporter` | default `GuidesReporter`; types `GuidesReporterOptions`, `GuideOutput`, `Page`                                                                                                                                        |
+| Import                                     | Exports                                                                                                                                                                                                                                       |
+| ------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `@tailor-platform/e2g`                     | types only: `Register`, `Locale`, `Variant`, `Meta`, `Text`, `Page`, `PageInfo`, `Block`, `Shot`, `ShotImage`, `Region`, `SourceLocation`, `GuideOutput`                                                                                      |
+| `@tailor-platform/e2g/markdown`            | `blocksToMarkdown`; type `MarkdownOptions`                                                                                                                                                                                                    |
+| `@tailor-platform/e2g/playwright`          | `guideTest`, `test` (the same object), `expect` (Playwright's), `guidePage`; types `Guide`, `GuideStepDetails`, `GuideOptions`, `GuideShotSettings`, `ShotOptions`, `Locale`, `Variant`, `Meta`, `Text`, `Page`, `Block`, `Shot`, `ShotImage` |
+| `@tailor-platform/e2g/playwright/reporter` | default `GuidesReporter`; types `GuidesReporterOptions`, `GuideOutput`, `Page`, `PageInfo`                                                                                                                                                    |
 
 The root and `@tailor-platform/e2g/markdown` do not load Playwright. `@playwright/test` is an optional peer dependency, needed only for `@tailor-platform/e2g/playwright`. `Register` is augmented on `@tailor-platform/e2g` itself.
 
 ### `Register`
 
-An empty interface you augment with `declare module "@tailor-platform/e2g"`, as in [step 2](#2-register-your-locales). Both keys are optional.
+An empty interface you augment with `declare module "@tailor-platform/e2g"`, as in [step 2](#2-register-your-locales). Every key is optional.
 
-| Type     | Registered                             | Not registered                     |
-| -------- | -------------------------------------- | ---------------------------------- |
-| `Locale` | `Register["locales"]`                  | `string`                           |
-| `Meta`   | `Register["meta"]`                     | `unknown`                          |
-| `Text`   | see [step 2](#2-register-your-locales) | `string \| Record<string, string>` |
+| Type      | Registered                             | Not registered                     |
+| --------- | -------------------------------------- | ---------------------------------- |
+| `Locale`  | `Register["locales"]`                  | `string`                           |
+| `Variant` | `Register["variants"]`                 | `string`                           |
+| `Meta`    | `Register["meta"]`                     | `unknown`                          |
+| `Text`    | see [step 2](#2-register-your-locales) | `string \| Record<string, string>` |
 
 ### `guideTest`
 
@@ -487,12 +490,14 @@ Adds a paragraph. Step numbers continue across it, unless the text's first line 
 
 ### Options
 
-Set these in the guides config's top-level or project `use`, typed with `defineConfig<GuideOptions>()`. `guideLocale` belongs on a project, where the reporter reads it; the others can also be changed for a file or a `describe` with `test.use()`. A project's `guideShot` replaces the top-level one as a whole, as Playwright merges `use` one key deep.
+Set these in the guides config's top-level or project `use`, typed with `defineConfig<GuideOptions>()`. `guideLocale` and `guideVariant` belong on a project, where the reporter reads them; the others can also be changed for a file or a `describe` with `test.use()`. A project's `guideShot` replaces the top-level one as a whole, as Playwright merges `use` one key deep.
 
 ```ts
 interface GuideOptions {
   /** The locale this project writes guides in. Without it the guide calls only check their arguments. */
   guideLocale?: Locale;
+  /** Which image of each shot this project takes, such as a viewport or a color scheme. Pages are shared by the variants of a locale. */
+  guideVariant?: Variant;
   /** Whether shots take screenshots. */
   guideShots: boolean;
   guideShot: GuideShotSettings;
@@ -501,12 +506,13 @@ interface GuideOptions {
 }
 ```
 
-| Option        | Default   | Meaning                                                                                                                                                               |
-| ------------- | --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `guideLocale` | none      | The locale this project runs and writes, one of your registered locales. Without it the run is a normal e2e run: nothing is attached. Two projects may not share one. |
-| `guideShots`  | `false`   | Take the PNGs. Without them a page that has shots is not written.                                                                                                     |
-| `guideShot`   | see below | How screenshots look. Keys you leave out keep their defaults.                                                                                                         |
-| `guideClock`  | `"fixed"` | [The clock](#the-clock) in guide runs: frozen when the context is made, frozen at a `Date` or epoch milliseconds, or `false` to leave it running.                     |
+| Option         | Default   | Meaning                                                                                                                                                                                                          |
+| -------------- | --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `guideLocale`  | none      | The locale this project runs and writes, one of your registered locales. Without it the run is a normal e2e run: nothing is attached. Two projects may not share one.                                            |
+| `guideVariant` | none      | The [variant](#responsive-screenshots) of the shots this project takes. Set it on every locale project or on none, and give every locale a project for each variant. Two projects of a locale may not share one. |
+| `guideShots`   | `false`   | Take the PNGs. Without them a page that has shots is not written.                                                                                                                                                |
+| `guideShot`    | see below | How screenshots look. Keys you leave out keep their defaults.                                                                                                                                                    |
+| `guideClock`   | `"fixed"` | [The clock](#the-clock) in guide runs: frozen when the context is made, frozen at a `Date` or epoch milliseconds, or `false` to leave it running.                                                                |
 
 `guideShot` keys:
 
@@ -526,7 +532,7 @@ A context you create yourself with `browser.newContext()` is not frozen. To shoo
 ### The guides config
 
 - **`grep: /@guide/` on each locale project**, exactly: no flags, not an array, no `grepInvert`. Any other `grep` may leave guides out, so the run is treated as partial and writes nothing. Only projects with `guideLocale` are checked, so a setup project needs no `grep`; a top-level `grep` would apply to it too and filter out its tests.
-- **One project per locale**, each with its own `guideLocale`. Its other `use` options (`locale`, `timezoneId`, a browser) apply as usual. The pages expected are every `@guide` test's slug in every locale project.
+- **One project per locale**, each with its own `guideLocale`, or one per locale and [variant](#responsive-screenshots). Its other `use` options (`locale`, `timezoneId`, a browser, a device) apply as usual. The pages expected are every `@guide` test's slug in every locale.
 - **`forbidOnly: true`**, required. A reporter cannot see `.only`, so without it the run is treated as partial and writes nothing (`wrote no guide pages because forbidOnly is off, so a .only run cannot be ruled out`).
 - **Share the rest with your e2e config.** Reuse its `testDir`, `webServer`, `use` and setup projects (including `storageState`) so guides see the app your tests see.
 - **Keep the reporter out of your normal config.** There it finds no project with `guideLocale` and writes nothing (`wrote no guide pages because no project sets use.guideLocale`). Your e2e config needs nothing from this library, and its reports stay free of screenshots.
@@ -537,14 +543,14 @@ A context you create yourself with `browser.newContext()` is not frozen. To shoo
 reporter: [["list"], ["@tailor-platform/e2g/playwright/reporter", guides]],
 ```
 
-| Option       | Type                                           | Default                                  | Meaning                                                                                                                                  |
-| ------------ | ---------------------------------------------- | ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| `output`     | `GuideOutput`                                  | required                                 | Where pages go and how they are rendered.                                                                                                |
-| `shots.dir`  | `string`                                       | required                                 | Directory for screenshots.                                                                                                               |
-| `shots.path` | `(page, name) => string`                       | `<shots.dir>/<locale>/<slug>/<name>.png` | Path of one screenshot.                                                                                                                  |
-| `shots.same` | `((a: Buffer, b: Buffer) => boolean) \| false` | built-in comparison                      | Whether a new PNG shows the same screen as the file on disk, in which case the file is kept. `false` rewrites whenever the bytes differ. |
-| `manifest`   | `string`                                       | required                                 | JSON file listing every file the reporter wrote. Commit it.                                                                              |
-| `prune`      | `boolean`                                      | `false`                                  | Delete pages and shots that are in the manifest but were not produced by this run.                                                       |
+| Option       | Type                                           | Default                                                                                                          | Meaning                                                                                                                                  |
+| ------------ | ---------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `output`     | `GuideOutput`                                  | required                                                                                                         | Where pages go and how they are rendered.                                                                                                |
+| `shots.dir`  | `string`                                       | required                                                                                                         | Directory for screenshots.                                                                                                               |
+| `shots.path` | `(page, name, variant) => string`              | `<shots.dir>/<locale>/<slug>/<name>.png`, with `<variant>/` before `<name>` when the projects set `guideVariant` | Path of one screenshot. `page` has no `blocks`. Give each variant its own path, or the run fails.                                        |
+| `shots.same` | `((a: Buffer, b: Buffer) => boolean) \| false` | built-in comparison                                                                                              | Whether a new PNG shows the same screen as the file on disk, in which case the file is kept. `false` rewrites whenever the bytes differ. |
+| `manifest`   | `string`                                       | required                                                                                                         | JSON file listing every file the reporter wrote. Commit it.                                                                              |
+| `prune`      | `boolean`                                      | `false`                                                                                                          | Delete pages and shots that are in the manifest but were not produced by this run.                                                       |
 
 Relative paths in the options and those returned by `output.path` and `shots.path` are resolved from the directory of the Playwright config file.
 
@@ -569,9 +575,13 @@ const guides: GuidesReporterOptions = {
 
 ```ts
 interface GuideOutput<M = Meta> {
-  path(page: Page<M>): string;
-  render(page: Page<M>, ctx: { image(shot: { name: string }): string }): string;
+  path(page: PageInfo<M>): string;
+  render(page: Page<M>): string;
 }
+```
+
+```ts
+type PageInfo<M = Meta> = Omit<Page<M>, "blocks">;
 ```
 
 ```ts
@@ -585,9 +595,9 @@ interface Page<M = Meta> {
 ```
 
 ```ts
-type Block =
+type Block<S = Shot> =
   | { kind: "say"; text: string; location?: SourceLocation }
-  | { kind: "step"; text: string; shots: Shot[]; location?: SourceLocation };
+  | { kind: "step"; text: string; shots: S[]; location?: SourceLocation };
 ```
 
 ```ts
@@ -602,7 +612,18 @@ interface SourceLocation {
 interface Shot {
   name: string;
   alt: string;
-  /** The boxes of the shot's `highlight` elements, in their order. */
+  /** One image per variant, in the order of the projects. */
+  images: ShotImage[];
+}
+```
+
+```ts
+interface ShotImage {
+  /** The `guideVariant` of the project that took it; absent when no project sets one. */
+  variant?: Variant;
+  /** The PNG's path relative to the page's directory, with `/` separators. */
+  src: string;
+  /** The boxes of the shot's `highlight` elements in this image, in their order. */
   regions: Region[];
 }
 ```
@@ -616,37 +637,49 @@ interface Region {
 }
 ```
 
-- `path(page)` returns the page's file path.
-- `render(page, { image })` returns its content. `image(shot)` gives the shot's path relative to the page's directory, with `/` separators, ready for a link.
+- `path(page)` returns the page's file path. It gets the page without `blocks`, since where the images are linked from depends on the path.
+- `render(page)` returns its content. Each image's `src` is ready for a link.
 - `page.locale` is the project's `guideLocale`, and `page.meta` the `meta` given to `guidePage()`, untouched.
 - `page.source` is the spec file relative to `config.rootDir` (the top-level `testDir`), with `/` separators.
 - Step texts, paragraphs and `alt`s in `blocks` are already in the page's locale.
 - A block's `location` is where its `guide.step` or `guide.say` was called, or the `location` given to `guide.step`, with `file` relative to `config.rootDir` like `page.source`. A call in a helper or page object is located there, not in the spec. Use it to link a page to its test or to show the code beside it.
-- `shot.regions` has one `Region` per `highlight` locator, in the order given: the element's box in the image, as fractions of the image's width and height, so it does not depend on the device scale or on the size the image is shown at. It is measured with the `hide` elements gone, clipped to the image and rounded to 4 decimals. An element in an iframe is placed where it shows on the page. A highlight that ends up entirely outside the image, such as one scrolled out of the viewport in a shot without `crop`, fails `guide.shot`. CSS added by `style` applies after the measurement, so CSS that moves the highlighted elements moves them away from their regions.
+- `shot.images` has one image without a `variant` when no project sets `guideVariant`, and otherwise one per variant, in the order the projects first use them.
+- `image.regions` has one `Region` per `highlight` locator, in the order given: the element's box in the image, as fractions of the image's width and height, so it does not depend on the device scale or on the size the image is shown at. It is measured with the `hide` elements gone, clipped to the image and rounded to 4 decimals. An element in an iframe is placed where it shows on the page. A highlight that ends up entirely outside the image, such as one scrolled out of the viewport in a shot without `crop`, fails `guide.shot`. CSS added by `style` applies after the measurement, so CSS that moves the highlighted elements moves them away from their regions.
 
-### `blocksToMarkdown(blocks, image)`
+### `blocksToMarkdown(blocks, options?)`
 
 Renders blocks as CommonMark: each `step` becomes a numbered list item with its images indented under it in order, and each `say` a paragraph. Numbering continues across a `say` unless its first line starts with `#`, which restarts it at 1. Text is inserted as is, so inline Markdown works. Returns `""` for no blocks, otherwise text ending in a newline.
+
+A shot with one image becomes `![alt](src)`. A shot with an image per variant becomes an HTML `<picture>`: `options.media` gives the media query of each variant that is a `<source>`, in the images' order, and the one variant without a media query is the `<img>`, shown where no query matches. It throws unless exactly one variant has no media query.
+
+```ts
+interface MarkdownOptions {
+  /** The media query of each variant a `<source>` is for; the one variant left out is the `<img>`. */
+  media?: Partial<Record<Variant, string>>;
+}
+```
 
 ## How writing works
 
 `guide.step` and `guide.say` attach a marker to their own step, and `guide.shot` attaches its name and `alt`, plus the PNG and the regions when `guideShots` is on. When a guide test ends, the reporter walks its last attempt's steps in start order, through hooks and helpers, and reads only those attachments: anything attached to the test directly is ignored. At the end of the run it groups the tests into pages and plans every write and delete before touching the disk.
 
-| Situation                                                                                                           | Result                                                                                                                                                                                          |
-| ------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| The run may not include every guide ([signals](#partial-runs))                                                      | Nothing is written or deleted. One line says why.                                                                                                                                               |
-| No project sets `guideLocale`                                                                                       | Nothing is written or deleted. One line says so.                                                                                                                                                |
-| Two projects set the same `guideLocale`                                                                             | The run fails; nothing is written.                                                                                                                                                              |
-| A page's tests span several spec files, their `meta` differ, a shot name repeats, or two pages map to the same file | The run fails; nothing is written or deleted. One line per error.                                                                                                                               |
-| A test of the page failed, was skipped or did not run, or a guide attachment could not be read                      | That page and its shots are not written, and one line names it. Other pages are.                                                                                                                |
-| A step's shot has no image, as when `guideShots` is off                                                             | That page and its shots are not written. One line says to run with `guideShots` on.                                                                                                             |
-| A locale project ran none of the guide's tests, as with `--project en`                                              | That locale's page is not written. The other locales' pages are.                                                                                                                                |
-| Every test of the page passed, including on retry (the last attempt counts)                                         | The page and its shots are written, and their paths added to the manifest.                                                                                                                      |
-| A page's text or a PNG's bytes did not change, or the PNG only differs by rendering noise                           | That file is left as it is.                                                                                                                                                                     |
-| `prune` is on and every page was written                                                                            | Files in the manifest that this run did not produce are deleted, along with directories left empty under `shots.dir` or the manifest's directory. The manifest is replaced by this run's files. |
-| `prune` is on but a page was not written, or no guide was found                                                     | Nothing is deleted. One line says why.                                                                                                                                                          |
-| `prune` is off                                                                                                      | Nothing is deleted. The manifest only gains entries.                                                                                                                                            |
-| The manifest exists but is not valid JSON or not version 1                                                          | The manifest is left as it is and nothing is deleted. Pages are still written, but not recorded. One line says to fix or delete it.                                                             |
+| Situation                                                                                                                                                                                   | Result                                                                                                                                                                                          |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| The run may not include every guide ([signals](#partial-runs))                                                                                                                              | Nothing is written or deleted. One line says why.                                                                                                                                               |
+| No project sets `guideLocale`                                                                                                                                                               | Nothing is written or deleted. One line says so.                                                                                                                                                |
+| Two projects set the same `guideLocale` (and `guideVariant`), only some guide projects set `guideVariant`, or a locale lacks a project for a variant                                        | The run fails; nothing is written.                                                                                                                                                              |
+| The variants of a page differ in `meta`, steps, paragraphs, shot names or `alt`s                                                                                                            | The run fails; nothing is written or deleted.                                                                                                                                                   |
+| A page's tests span several spec files, their `meta` differ, a shot name repeats, two pages map to the same file, or a page writes one file twice, as when `shots.path` ignores the variant | The run fails; nothing is written or deleted. One line per error.                                                                                                                               |
+| A test of the page failed, was skipped or did not run, or a guide attachment could not be read                                                                                              | That page and its shots are not written, and one line names it. Other pages are.                                                                                                                |
+| A step's shot has no image, as when `guideShots` is off                                                                                                                                     | That page and its shots are not written. One line says to run with `guideShots` on.                                                                                                             |
+| A locale project ran none of the guide's tests, as with `--project en`                                                                                                                      | That locale's page is not written. The other locales' pages are.                                                                                                                                |
+| A variant's project ran none of the guide's tests, or one of its tests failed                                                                                                               | That locale's page is not written, since it would miss the variant's images.                                                                                                                    |
+| Every test of the page passed, including on retry (the last attempt counts)                                                                                                                 | The page and its shots are written, and their paths added to the manifest.                                                                                                                      |
+| A page's text or a PNG's bytes did not change, or the PNG only differs by rendering noise                                                                                                   | That file is left as it is.                                                                                                                                                                     |
+| `prune` is on and every page was written                                                                                                                                                    | Files in the manifest that this run did not produce are deleted, along with directories left empty under `shots.dir` or the manifest's directory. The manifest is replaced by this run's files. |
+| `prune` is on but a page was not written, or no guide was found                                                                                                                             | Nothing is deleted. One line says why.                                                                                                                                                          |
+| `prune` is off                                                                                                                                                                              | Nothing is deleted. The manifest only gains entries.                                                                                                                                            |
+| The manifest exists but is not valid JSON or not version 1                                                                                                                                  | The manifest is left as it is and nothing is deleted. Pages are still written, but not recorded. One line says to fix or delete it.                                                             |
 
 The manifest is the only list of files the reporter may delete, so hand-written pages next to generated ones are safe. Its paths are relative to the manifest's directory and use `/` on every OS. With only the invite guide, it reads:
 
@@ -784,16 +817,14 @@ await guide.say({
 
 ### A tour over the screenshots
 
-`render` can write any format, so a page can be data for a step-by-step tour in your docs site instead of Markdown. Each shot carries the boxes of its highlighted elements:
+`render` can write any format, so a page can be data for a step-by-step tour in your docs site instead of Markdown. Each image of a shot carries its `src` and the boxes of its highlighted elements:
 
 ```ts
 const tour: GuideOutput = {
   path: (page) => `site/tours/${page.locale}/${page.slug}.json`,
-  render: (page, { image }) => {
+  render: (page) => {
     const steps = page.blocks.flatMap((block) =>
-      block.kind === "step"
-        ? [{ text: block.text, shots: block.shots.map((shot) => ({ ...shot, src: image(shot) })) }]
-        : [],
+      block.kind === "step" ? [{ text: block.text, shots: block.shots }] : [],
     );
     return `${JSON.stringify({ title: page.meta.title[page.locale], steps }, null, 2)}\n`;
   },
@@ -803,6 +834,62 @@ const tour: GuideOutput = {
 A region's fractions are CSS percentages: put the image in a `position: relative` box, and place a marker or a tooltip with `position: absolute`, `left: x × 100%`, `top: y × 100%`, `width: width × 100%` and `height: height × 100%`. It stays on the element at any size the image is shown at.
 
 [`examples/tour`](examples/tour) builds a click-through tour this way, with branches and the test's code shown beside each step.
+
+### Responsive screenshots
+
+Register the variants, as with the locales:
+
+```ts
+declare module "@tailor-platform/e2g" {
+  interface Register {
+    variants: "desktop" | "mobile";
+  }
+}
+```
+
+Give each locale a project per variant, with the device to take it on:
+
+```ts
+const viewports = { desktop: devices["Desktop Chrome"], mobile: devices["Pixel 7"] };
+
+const responsive = defineConfig<GuideOptions>({
+  projects: (["en", "ja"] as const).flatMap((guideLocale) =>
+    (["desktop", "mobile"] as const).map((guideVariant) => ({
+      name: `${guideLocale}-${guideVariant}`,
+      grep: /@guide/,
+      use: { ...viewports[guideVariant], guideLocale, guideVariant, guideShots: true },
+    })),
+  ),
+});
+```
+
+Each locale still gets one page, and each shot one image per variant. `blocksToMarkdown` turns them into a `<picture>` that shows the mobile image on small screens:
+
+```ts
+const responsiveOutput: GuideOutput = {
+  path: (page) => `docs/${page.locale}/guides/${page.slug}.md`,
+  render: (page) => blocksToMarkdown(page.blocks, { media: { mobile: "(max-width: 640px)" } }),
+};
+```
+
+A page reads the same on every screen, so its steps, paragraphs, shot names and `alt`s must match across the variants, or the run fails. Put what only one layout needs, such as opening a folded menu, in a `test.step`, which stays out of the page. `guideVariant` is a fixture:
+
+```ts
+test("open settings", guidePage("open-settings", meta), async ({ page, guide, guideVariant }) => {
+  await page.goto("/");
+  await guide.step({ en: "Open **Settings**.", ja: "**設定** を開きます。" }, async () => {
+    // the menu is folded on small screens; this step is not in the page
+    if (guideVariant === "mobile")
+      await test.step("open the menu", () => page.getByTestId("menu-button").click());
+    await page.getByTestId("settings-link").click();
+    await guide.shot("settings", { alt: { en: "Settings", ja: "設定" } });
+  });
+});
+```
+
+If the steps themselves differ on a small screen, write a second guide with its own slug instead.
+
+Variants are not only viewports. A `dark` variant with `colorScheme: "dark"` and `media: { dark: "(prefers-color-scheme: dark)" }` follows the reader's theme.
 
 ### Locators in several languages
 

@@ -9,7 +9,6 @@ import type {
   TestError,
   TestResult,
 } from "@playwright/test/reporter";
-import type { Page } from "../../types.js";
 import { ANNOTATION } from "../protocol.js";
 import type { GuideOptions } from "../use.js";
 import { collectPages, type ExpectedTest, type TestOutcome } from "../../core/collect.js";
@@ -19,9 +18,9 @@ import { readSteps } from "./read-steps.js";
 import { plan } from "../../core/plan.js";
 import { runScope, type RunScope } from "./run-scope.js";
 import { sameScreen } from "../../core/same-screen.js";
-import type { GuideOutput } from "../../core/types.js";
+import type { GuideOutput, PageInfo } from "../../core/types.js";
 
-export type { GuideOutput } from "../../core/types.js";
+export type { GuideOutput, PageInfo } from "../../core/types.js";
 export type { Page } from "../../types.js";
 
 export interface GuidesReporterOptions {
@@ -30,7 +29,7 @@ export interface GuidesReporterOptions {
   shots: {
     dir: string;
     // oxlint-disable-next-line typescript/no-explicit-any -- any page meta the output understands
-    path?: (page: Page<any>, name: string) => string;
+    path?: (page: PageInfo<any>, name: string, variant: string | undefined) => string;
     /** Whether two PNGs show the same screen. `false` rewrites a shot whenever its bytes differ. */
     same?: ((a: Buffer, b: Buffer) => boolean) | false;
   };
@@ -41,6 +40,7 @@ export interface GuidesReporterOptions {
 interface GuideTest {
   slug: string;
   locale: string;
+  variant?: string;
   meta: unknown;
 }
 
@@ -60,34 +60,61 @@ function log(message: string) {
 const messageOf = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
 const guideLocale = (project: FullProject) => (project.use as Partial<GuideOptions>).guideLocale;
+const guideVariant = (project: FullProject) => (project.use as Partial<GuideOptions>).guideVariant;
 
-function guideProjects(config: FullConfig): FullProject[] {
-  const projects = config.projects.filter((p) => guideLocale(p) !== undefined);
-  const byLocale = new Map<string, FullProject>();
-  for (const project of projects) {
-    const locale = guideLocale(project)!;
-    const first = byLocale.get(locale);
-    if (first)
-      throw new Error(
-        `projects "${first.name}" and "${project.name}" both set use.guideLocale "${locale}"`,
-      );
-    byLocale.set(locale, project);
-  }
-  return projects;
+interface GuideProjects {
+  projects: FullProject[];
+  locales: string[];
+  variants: string[];
 }
 
-function guideOf(test: TestCase, locale: string): GuideTest | undefined {
+function guideProjects(config: FullConfig): GuideProjects {
+  const projects = config.projects.filter((p) => guideLocale(p) !== undefined);
+  const withVariant = projects.find((p) => guideVariant(p) !== undefined);
+  const withoutVariant = projects.find((p) => guideVariant(p) === undefined);
+  if (withVariant && withoutVariant)
+    throw new Error(
+      `project "${withoutVariant.name}" sets no use.guideVariant, but project "${withVariant.name}" does`,
+    );
+  const seen = new Map<string, FullProject>();
+  for (const project of projects) {
+    const locale = guideLocale(project)!;
+    const variant = guideVariant(project);
+    const key = `${locale}\0${variant ?? ""}`;
+    const first = seen.get(key);
+    if (first)
+      throw new Error(
+        `projects "${first.name}" and "${project.name}" both set use.guideLocale "${locale}"${variant === undefined ? "" : ` and use.guideVariant "${variant}"`}`,
+      );
+    seen.set(key, project);
+  }
+  const locales = [...new Set(projects.map((p) => guideLocale(p)!))];
+  const variants = withVariant ? [...new Set(projects.map((p) => guideVariant(p)!))] : [];
+  for (const locale of locales)
+    for (const variant of variants)
+      if (!seen.has(`${locale}\0${variant}`))
+        throw new Error(`locale "${locale}" has no project with use.guideVariant "${variant}"`);
+  return { projects, locales, variants };
+}
+
+function guideOf(test: TestCase, project: FullProject): GuideTest | undefined {
   const annotation = test.annotations.find((a) => a.type === ANNOTATION);
   if (!annotation?.description) return undefined;
   const { slug, meta } = JSON.parse(annotation.description) as { slug: string; meta: unknown };
-  return { slug, locale, meta };
+  const variant = guideVariant(project);
+  return {
+    slug,
+    locale: guideLocale(project)!,
+    ...(variant === undefined ? {} : { variant }),
+    meta,
+  };
 }
 
 function outcome(guide: GuideTest, result: TestResult): TestOutcome {
   const { blocks, shots, problem } = readSteps(result.steps);
   return {
     ok: result.status === "passed",
-    record: { schemaVersion: 1, ...guide, blocks },
+    record: { schemaVersion: 1, slug: guide.slug, locale: guide.locale, meta: guide.meta, blocks },
     shots,
     ...(problem ? { problem } : {}),
   };
@@ -111,12 +138,11 @@ export default class GuidesReporter implements Reporter {
 
   onBegin(config: FullConfig, suite: Suite): void {
     this.#guard(() => {
-      const projects = guideProjects(config);
+      const { projects, locales, variants } = guideProjects(config);
       if (projects.length === 0) {
         this.#skip = "no project sets use.guideLocale";
         return;
       }
-      const locales = projects.map((p) => guideLocale(p)!);
       // a project left out with --project ran none of its pages, so they come out incomplete
       const selected = projects.filter((p) =>
         config.filteredProjects.some((f) => f.name === p.name),
@@ -129,7 +155,7 @@ export default class GuidesReporter implements Reporter {
       for (const project of selected) {
         const projectSuite = suite.suites.find((s) => s.project()?.name === project.name);
         for (const test of projectSuite?.allTests() ?? []) {
-          const guide = guideOf(test, guideLocale(project)!);
+          const guide = guideOf(test, project);
           if (!guide) continue;
           const { file, line, column } = test.location;
           tests.set(test.id, guide);
@@ -137,7 +163,9 @@ export default class GuidesReporter implements Reporter {
             id: test.id,
             slug: guide.slug,
             locale: guide.locale,
+            ...(guide.variant === undefined ? {} : { variant: guide.variant }),
             locales,
+            variants,
             file: real(file),
             line,
             column,
@@ -213,12 +241,18 @@ export default class GuidesReporter implements Reporter {
       errors,
       output: {
         path: (page) => at(options.output.path(page)),
-        render: (page, ctx) => options.output.render(page, ctx),
+        render: (page) => options.output.render(page),
       },
-      shotPath: (page, name) =>
+      shotPath: (page, name, variant) =>
         options.shots.path
-          ? at(options.shots.path(page, name))
-          : join(shotsDir, page.locale, page.slug, `${name}.png`),
+          ? at(options.shots.path(page, name, variant))
+          : join(
+              shotsDir,
+              page.locale,
+              page.slug,
+              ...(variant === undefined ? [] : [variant]),
+              `${name}.png`,
+            ),
       manifestDir,
       manifest: previous,
       current: readFile,

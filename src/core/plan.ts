@@ -1,7 +1,7 @@
-import type { Page } from "../types.js";
-import type { CollectedPage } from "./collect.js";
+import type { Block, Shot, ShotImage } from "../types.js";
+import type { CollectedPage, CollectedShot } from "./collect.js";
 import { directoryOf, relativePath, resolvePath } from "./paths.js";
-import type { GuideOutput, Manifest, Op, RunScope } from "./types.js";
+import type { GuideOutput, Manifest, Op, PageInfo, RunScope } from "./types.js";
 
 export interface PlanInput {
   scope: RunScope;
@@ -10,7 +10,7 @@ export interface PlanInput {
   incomplete: string[];
   errors: string[];
   output: GuideOutput<unknown>;
-  shotPath(page: Page<unknown>, name: string): string;
+  shotPath(page: PageInfo<unknown>, name: string, variant: string | undefined): string;
   manifestDir: string;
   manifest: Manifest;
   current(path: string): Buffer | null;
@@ -43,18 +43,26 @@ const nothing = (messages: string[], errors: string[] = []): Plan => ({
   errors,
 });
 
-function targetsOf({ shots: taken, ...page }: CollectedPage, input: PlanInput): Target[] {
-  const owner = `${page.slug}/${page.locale}`;
-  const path = input.output.path(page);
+function targetsOf({ blocks, ...info }: CollectedPage, input: PlanInput): Target[] {
+  const owner = `${info.slug}/${info.locale}`;
+  const path = input.output.path(info);
   const dir = directoryOf(path);
-  const image = (shot: { name: string }) => relativePath(dir, input.shotPath(page, shot.name));
-  const shots = [...taken].map(([name, data]): Target => ({
-    owner,
-    path: input.shotPath(page, name),
-    data,
-    kind: "shots",
-  }));
-  return [{ owner, path, data: input.output.render(page, { image }), kind: "pages" }, ...shots];
+  const shots: Target[] = [];
+  const place = (shot: CollectedShot): Shot => ({
+    name: shot.name,
+    alt: shot.alt,
+    images: shot.images.map(({ png, ...image }) => {
+      const at = input.shotPath(info, shot.name, image.variant);
+      shots.push({ owner, path: at, data: png, kind: "shots" });
+      // a variant is one the projects set, so one of the registered ones
+      return { ...image, src: relativePath(dir, at) } as ShotImage;
+    }),
+  });
+  const placed = blocks.map((b): Block =>
+    b.kind === "say" ? b : { ...b, shots: b.shots.map(place) },
+  );
+  const page = { ...info, blocks: placed };
+  return [{ owner, path, data: input.output.render(page), kind: "pages" }, ...shots];
 }
 
 function collisions(targets: Target[]): string[] {
@@ -64,6 +72,11 @@ function collisions(targets: Target[]): string[] {
     const first = owners.get(path);
     if (first === undefined) owners.set(path, owner);
     else if (first !== owner) errors.push(`pages ${first} and ${owner} both write ${path}`);
+    // a shots.path that ignores the variant would put every variant's image in one file
+    else
+      errors.push(
+        `page ${owner} writes ${path} more than once; give each variant's shots their own path`,
+      );
   }
   return errors;
 }
