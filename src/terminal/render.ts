@@ -36,15 +36,21 @@ export function createTerminal(
 function readRow(term: HeadlessTerminal, y: number, scratch: IBufferCell): CellRow {
   const line = term.buffer.active.getLine(y);
   const row: CellRow = [];
+  let hidWide = false;
   for (let x = 0; x < term.cols; x++) {
     const cell = line?.getCell(x, scratch);
     if (!cell) {
+      hidWide = false;
       row.push(BLANK);
       continue;
     }
-    const width = cell.getWidth() as 0 | 1 | 2;
+    // Concealed text (SGR 8) keeps its columns but shows nothing; a wide
+    // character becomes two narrow blanks so the grid stays the same.
+    const concealed: boolean = cell.isInvisible() !== 0 || (cell.getWidth() === 0 && hidWide);
+    hidWide = concealed && cell.getWidth() === 2;
+    const width = concealed ? 1 : (cell.getWidth() as 0 | 1 | 2);
     row.push({
-      chars: width === 0 ? "" : cell.getChars() || " ",
+      chars: concealed ? " " : width === 0 ? "" : cell.getChars() || " ",
       width,
       fg: readColor(cell.isFgPalette(), cell.isFgRGB(), cell.getFgColor()),
       bg: readColor(cell.isBgPalette(), cell.isBgRGB(), cell.getBgColor()),

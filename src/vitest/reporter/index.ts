@@ -5,6 +5,7 @@ import type {
   TestCase,
   TestModule,
   TestProject,
+  TestRunEndReason,
   TestSpecification,
   Vitest,
 } from "vitest/node";
@@ -79,10 +80,11 @@ class GuidesReporter implements Reporter {
   async onTestRunEnd(
     testModules: ReadonlyArray<TestModule>,
     unhandledErrors: ReadonlyArray<SerializedError>,
+    reason: TestRunEndReason,
   ): Promise<void> {
     try {
       const vitest = this.#vitest!;
-      const scope = await this.#scope(vitest, testModules, unhandledErrors);
+      const scope = await this.#scope(vitest, testModules, unhandledErrors, reason);
       if (this.#write(vitest, testModules, scope)) process.exitCode = 1;
     } catch (error) {
       log(messageOf(error));
@@ -95,10 +97,11 @@ class GuidesReporter implements Reporter {
     vitest: Vitest,
     testModules: ReadonlyArray<TestModule>,
     unhandledErrors: ReadonlyArray<SerializedError>,
+    reason: TestRunEndReason,
   ): Promise<RunScope> | RunScope {
     if (unhandledErrors.length > 0)
       return { partial: true, reason: "Vitest reported an error outside the tests" };
-    return vitestRunScope(vitest, this.#specifications, testModules);
+    return vitestRunScope(vitest, this.#specifications, testModules, reason);
   }
 
   /** @returns whether the guides have errors that fail the run */

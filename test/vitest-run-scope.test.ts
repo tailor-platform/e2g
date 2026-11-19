@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import type { TestModule, TestProject, TestSpecification, Vitest } from "vitest/node";
+import type {
+  TestModule,
+  TestProject,
+  TestRunEndReason,
+  TestSpecification,
+  Vitest,
+} from "vitest/node";
 import { vitestRunScope } from "../src/vitest/reporter/run-scope.js";
 
 const ROOT = "/repo";
@@ -13,6 +19,7 @@ function fakeProject(guide = true, files = FILES): TestProject {
 }
 
 interface FakeRun {
+  end?: TestRunEndReason;
   config?: Record<string, unknown>;
   pattern?: RegExp;
   specs?: Partial<TestSpecification>[];
@@ -37,7 +44,7 @@ function scope(run: FakeRun = {}) {
     errors: () => m.errors ?? [],
     task: { containsOnly: m.containsOnly ?? false },
   })) as unknown as TestModule[];
-  return vitestRunScope(vitest, specs, modules);
+  return vitestRunScope(vitest, specs, modules, run.end);
 }
 
 const partial = (reason: string) => ({ partial: true, reason });
@@ -45,6 +52,14 @@ const partial = (reason: string) => ({ partial: true, reason });
 describe("vitestRunScope", () => {
   it("full run", async () => {
     expect(await scope()).toEqual({ partial: false });
+  });
+
+  it("an interrupted run", async () => {
+    expect(await scope({ end: "interrupted" })).toEqual(partial("the run was interrupted"));
+  });
+
+  it("a failed run is still complete", async () => {
+    expect(await scope({ end: "failed" })).toEqual({ partial: false });
   });
 
   it.each([

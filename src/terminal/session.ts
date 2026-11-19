@@ -46,6 +46,11 @@ export class Session {
         this.notify();
       });
     });
+    // Replies to terminal queries (cursor position, device status) go back to
+    // the process, which may block until it reads them.
+    this.term.onData((data) => {
+      if (!this.disposed && this.code === undefined) this.proc.write(data);
+    });
     this.proc.onExit((event) => {
       this.code = event.exitCode;
       // Output already queued in the parser still belongs on the screen.
@@ -121,7 +126,10 @@ export class Session {
     return new Promise((resolve, reject) => {
       const check = () => {
         const now = Date.now();
-        if (this.pending === 0 && now - this.lastData >= idle) return resolve();
+        // The quiet period starts no earlier than the call, so a key pressed
+        // just before it gets time to redraw an already idle screen.
+        const quiet = now - Math.max(this.lastData, started);
+        if (this.pending === 0 && quiet >= idle) return resolve();
         if (now - started >= timeout) {
           return reject(
             new Error(`screen did not settle within ${timeout}ms; screen:\n${this.screen()}`),

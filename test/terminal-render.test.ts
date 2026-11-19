@@ -10,6 +10,11 @@ describe("renderTerminal", () => {
     expect((await renderTerminal("\x1b[32mok\x1b[0m")).text).toBe("ok");
   });
 
+  it("blanks concealed text but keeps its columns", async () => {
+    expect((await renderTerminal("a\x1b[8msecret\x1b[0mb")).text).toBe("a      b");
+    expect((await renderTerminal("a\x1b[8m日本\x1b[0mb")).text).toBe("a    b");
+  });
+
   it("wraps at cols", async () => {
     const { text } = await renderTerminal("a".repeat(85), { cols: 80 });
     expect(text.split("\n").map((l) => l.length)).toEqual([80, 5]);

@@ -252,6 +252,18 @@ describe("blocksToMarkdown", () => {
       );
     });
 
+    it("indents every line of a multi-line command", () => {
+      expect(blocksToMarkdown([command("Run.", "echo a \\\n  b", "a b")])).toBe(
+        "1. Run.\n\n   ```console\n   $ echo a \\\n     b\n   a b\n   ```\n",
+      );
+    });
+
+    it("fences a command with a fence on a later line", () => {
+      expect(blocksToMarkdown([command("Write.", "cat <<'EOF'\n```\nEOF", "```")])).toBe(
+        "1. Write.\n\n   ````console\n   $ cat <<'EOF'\n   ```\n   EOF\n   ```\n   ````\n",
+      );
+    });
+
     it("a command with no output", () => {
       expect(blocksToMarkdown([command("Make it.", "mkdir demo", "")])).toBe(
         "1. Make it.\n\n   ```console\n   $ mkdir demo\n   ```\n",

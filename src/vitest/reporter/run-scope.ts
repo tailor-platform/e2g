@@ -1,4 +1,10 @@
-import type { TestModule, TestProject, TestSpecification, Vitest } from "vitest/node";
+import type {
+  TestModule,
+  TestProject,
+  TestRunEndReason,
+  TestSpecification,
+  Vitest,
+} from "vitest/node";
 import { relativePath } from "../../core/paths.js";
 import { real } from "../../core/real.js";
 import type { RunScope } from "../../core/types.js";
@@ -27,8 +33,11 @@ export async function vitestRunScope(
   vitest: Vitest,
   specifications: readonly TestSpecification[],
   modules: readonly TestModule[],
+  end: TestRunEndReason = "passed",
 ): Promise<RunScope> {
   const partial = (reason: string): RunScope => ({ partial: true, reason });
+  // a cancelled run (Ctrl+C, cancelCurrentRun) stops before every test has run
+  if (end === "interrupted") return partial("the run was interrupted");
   const { config } = vitest;
   const file = (path: string) => relativePath(real(config.root), real(path));
   if (config.watch) return partial("it runs in watch mode");

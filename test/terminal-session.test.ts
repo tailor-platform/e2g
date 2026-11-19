@@ -96,6 +96,30 @@ describe("Session", () => {
     expect(session.screen().split("\n")[1]).toBe("  cd");
   });
 
+  it("answers a cursor position query", async () => {
+    const script = [
+      'process.stdin.setRawMode(true); let got = "";',
+      'process.stdin.on("data", (d) => { got += d; const m = /\\x1b\\[(\\d+);(\\d+)R/.exec(got);',
+      'if (m) { console.log("cursor at " + m[1] + "," + m[2]); process.exit(0); } });',
+      'process.stdout.write("ab\\x1b[6n");',
+    ].join(" ");
+    const session = await make().spawn(`node -e '${script}'`);
+    await session.waitForText("cursor at 1,3", { timeout: 3_000 });
+  });
+
+  it("settle waits for a redraw after a key even when the screen was idle", async () => {
+    const script = [
+      'process.stdin.setRawMode(true); process.stdout.write("ready");',
+      'process.stdin.on("data", () => setTimeout(() => process.stdout.write("\\rredrawn"), 50));',
+    ].join(" ");
+    const session = await make().spawn(`node -e '${script}'`);
+    await session.waitForText("ready");
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    session.press("Space");
+    await session.settle();
+    expect(session.screen()).toContain("redrawn");
+  });
+
   it("applies terminal replacements in capture", async () => {
     const session = await make({ replace: [["secret", "......"]] }).spawn(`echo "a secret"`);
     await session.waitForExit();

@@ -200,6 +200,34 @@ describe("plan", () => {
     });
   });
 
+  it("prune leaves a file another manifest owns and lets go of it", () => {
+    const old: Manifest = {
+      schemaVersion: 1,
+      pages: ["en/intro.md", "en/shared.md"],
+      shots: ["../assets/shared.png"],
+    };
+    const result = plan(
+      input({
+        manifest: old,
+        prune: true,
+        foreign: new Set(["/site/docs/en/shared.md", "/site/assets/shared.png"]),
+      }),
+    );
+    expect(deletes(result.ops)).toEqual([]);
+    expect(result.manifest).toEqual({
+      schemaVersion: 1,
+      pages: ["en/intro.md"],
+      shots: ["../assets/en/intro/menu.png"],
+    });
+  });
+
+  it("without prune a file another manifest owns leaves this manifest", () => {
+    const old: Manifest = { schemaVersion: 1, pages: ["en/shared.md"], shots: [] };
+    const result = plan(input({ manifest: old, foreign: new Set(["/site/docs/en/shared.md"]) }));
+    expect(deletes(result.ops)).toEqual([]);
+    expect(result.manifest?.pages).toEqual(["en/intro.md"]);
+  });
+
   it("prune with an incomplete page deletes nothing", () => {
     const old: Manifest = { schemaVersion: 1, pages: ["en/gone.md"], shots: [] };
     const result = plan(input({ manifest: old, prune: true, incomplete: ["intro/ja"] }));

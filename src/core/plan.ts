@@ -142,12 +142,20 @@ function union(a: Manifest, b: Manifest): Manifest {
 const fileKey = (path: string) => resolvePath(path, ".");
 const caseKey = (path: string) => fileKey(path).toLowerCase();
 
-function stale(old: Manifest, targets: Target[], manifestDir: string): Op[] {
-  const keep = new Set(targets.map((t) => fileKey(t.path)));
+function stale(old: Manifest, targets: Target[], manifestDir: string, foreign: Set<string>): Op[] {
+  const keep = new Set([...targets.map((t) => t.path), ...foreign].map(fileKey));
   return [...new Set([...old.pages, ...old.shots])]
     .map((entry) => resolvePath(manifestDir, entry))
     .filter((path) => !keep.has(fileKey(path)))
     .map((path) => ({ op: "delete", path }));
+}
+
+// a file another manifest also lists is theirs to keep, so this manifest lets go of it
+function relinquish(manifest: Manifest, manifestDir: string, foreign: Set<string>): Manifest {
+  const owned = new Set([...foreign].map(fileKey));
+  const mine = (entries: string[]) =>
+    entries.filter((entry) => !owned.has(fileKey(resolvePath(manifestDir, entry))));
+  return { schemaVersion: 1, pages: mine(manifest.pages), shots: mine(manifest.shots) };
 }
 
 const sameManifest = (a: Manifest, b: Manifest) =>
@@ -171,14 +179,16 @@ export function plan(input: PlanInput): Plan {
   const blocker = pruneBlocker(input);
   if (blocker) messages.push(blocker);
   const pruning = input.prune && !blocker;
-  const deletes = pruning ? stale(input.manifest, targets, input.manifestDir) : [];
+  const deletes = pruning ? stale(input.manifest, targets, input.manifestDir, input.foreign) : [];
   // on a case-insensitive file system the delete removes the target too, so it must be written again
   const deleted = new Set(deletes.map((d) => caseKey(d.path)));
   const writes: Op[] = targets
     .filter((t) => deleted.has(caseKey(t.path)) || !unchanged(t, input))
     .map(({ path, data }) => ({ op: "write", path, data }));
   const made = produced(targets, input.manifestDir);
-  const next = pruning ? made : union(input.manifest, made);
+  const next = pruning
+    ? made
+    : union(relinquish(input.manifest, input.manifestDir, input.foreign), made);
   const manifest = sameManifest(input.manifest, next) ? null : next;
   return { ops: [...deletes, ...writes], manifest, messages, errors: [] };
 }

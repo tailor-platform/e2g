@@ -46,7 +46,7 @@ function item(it: Item, options: MarkdownOptions, indent: string): string {
   if (it.kind === "command")
     return fence(
       "console",
-      [`$ ${it.command}`, ...(it.output ? it.output.split("\n") : [])],
+      [...`$ ${it.command}`.split("\n"), ...(it.output ? it.output.split("\n") : [])],
       indent,
     );
   if (options.screen === "text") return fence("text", it.text.split("\n"), indent);

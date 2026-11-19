@@ -23,6 +23,12 @@ describe("terminal svg", () => {
     expect(svg).toMatch(/<text x="38\.40"[^>]*>a<\/text>/);
   });
 
+  it("hides concealed text", async () => {
+    const { svg } = await renderTerminal("\x1b[8msecret\x1b[0mok");
+    expect(svg).not.toContain("secret");
+    expect(svg).toMatch(/<text x="57\.60"[^>]*>ok<\/text>/);
+  });
+
   it("trims a wide blank by its two cells", async () => {
     const { svg } = await renderTerminal("　日本\n日本\n");
     const first = /<text [^>]*>[^<]*<\/text>/.exec(svg)![0];

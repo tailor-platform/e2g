@@ -546,7 +546,7 @@ export const rendered = await renderTerminal("\x1b[32mdone\x1b[0m\r\n", {
 
 ### Partial runs
 
-As with the browser guides, a run that may not include every guide writes nothing and deletes nothing, so a filtered or interrupted run cannot overwrite good docs. Under Vitest these are partial runs: a test name or tag filter, a file filter that skips a guide, `.only`, `--project`, `--changed`, `--related`, `--shard`, watch mode, `bail`, and errors outside the tests. The reporter logs a line that says why.
+As with the browser guides, a run that may not include every guide writes nothing and deletes nothing, so a filtered or interrupted run cannot overwrite good docs. Under Vitest these are partial runs: a test name or tag filter, a file filter that skips a guide, `.only`, `--project`, `--changed`, `--related`, `--shard`, watch mode, `bail`, a cancelled run, and errors outside the tests. The reporter logs a line that says why.
 
 The example in [`examples/cli`](examples/cli) is a runnable setup: `pnpm example:cli`.
 
