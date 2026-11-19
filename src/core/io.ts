@@ -8,29 +8,62 @@ import {
   statSync,
   writeFileSync,
 } from "node:fs";
-import { dirname, isAbsolute, relative, sep } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, sep } from "node:path";
 import { relativePath } from "./paths.js";
 import type { Manifest, Op } from "./types.js";
 
-const swapCase = (path: string) =>
-  path.replace(/[a-z]/gi, (c) => (c === c.toLowerCase() ? c.toUpperCase() : c.toLowerCase()));
+const swapCase = (name: string) =>
+  name.replace(/[a-z]/gi, (c) => (c === c.toLowerCase() ? c.toUpperCase() : c.toLowerCase()));
 
-/** Whether the file system holding `dir`, or its nearest existing ancestor, treats paths that differ only in case as one file. */
-export function caseInsensitive(dir: string): boolean {
+export interface ProbeFs {
+  statSync(path: string): { ino: number | bigint; dev: number | bigint; isDirectory(): boolean };
+  writeFileSync(path: string, data: string, options: { flag: "wx" }): void;
+  rmSync(path: string, options: { force: true }): void;
+}
+
+const nodeFs: ProbeFs = { statSync, writeFileSync, rmSync };
+
+function nearestDir(dir: string, fs: ProbeFs): string | null {
   for (let at = dir; ; at = dirname(at)) {
-    const other = swapCase(at);
-    if (other !== at) {
-      try {
-        const a = statSync(at);
-        try {
-          const b = statSync(other);
-          return a.ino === b.ino && a.dev === b.dev;
-        } catch {
-          return false;
-        }
-      } catch {}
-    }
-    if (dirname(at) === at) return process.platform === "darwin" || process.platform === "win32";
+    try {
+      if (fs.statSync(at).isDirectory()) return at;
+    } catch {}
+    if (dirname(at) === at) return null;
+  }
+}
+
+function sameFile(a: string, b: string, fs: ProbeFs): boolean {
+  try {
+    const x = fs.statSync(a);
+    const y = fs.statSync(b);
+    return x.ino === y.ino && x.dev === y.dev;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Whether the file system holding `dir`, or its nearest existing ancestor, treats paths that differ only in
+ * case as one file. Only names inside that directory are probed, so a volume mounted under a root with other
+ * rules is judged by its own.
+ */
+export function caseInsensitive(dir: string, fs: ProbeFs = nodeFs): boolean {
+  const fallback = process.platform === "darwin" || process.platform === "win32";
+  const at = nearestDir(dir, fs);
+  if (at === null) return fallback;
+  const probe = join(at, `.e2g-case-${process.pid}-${Math.random().toString(36).slice(2)}-Probe`);
+  try {
+    fs.writeFileSync(probe, "", { flag: "wx" });
+  } catch {
+    // a read-only directory: compare its own name under another spelling, keeping its parent as it is
+    const name = basename(at);
+    const other = join(dirname(at), swapCase(name));
+    return other === at ? fallback : sameFile(at, other, fs);
+  }
+  try {
+    return sameFile(probe, join(at, swapCase(basename(probe))), fs);
+  } finally {
+    fs.rmSync(probe, { force: true });
   }
 }
 

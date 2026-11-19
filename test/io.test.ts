@@ -14,6 +14,7 @@ import {
   apply,
   caseInsensitive,
   commit,
+  type ProbeFs,
   readFile,
   readManifest,
   writeManifest,
@@ -173,13 +174,19 @@ describe("foreignPaths", () => {
     writeFileSync(join(docs, "broken.json"), "{ not json");
     const manifestLike = JSON.stringify({ schemaVersion: 1, pages: ["x.md"], shots: [] });
     writeFileSync(join(docs, "page.md"), manifestLike);
-    expect(foreignPaths(join(docs, ".e2g.json"))).toEqual(
+    expect(foreignPaths(join(docs, ".e2g.json"), false)).toEqual(
       new Set([join(docs, "en/other.md"), join(dir, "assets/en/other/a.png")]),
     );
   });
 
+  it("treats its own manifest under another spelling as its own on a case-insensitive file system", () => {
+    writeManifest(join(dir, ".cli.json"), { schemaVersion: 1, pages: ["own.md"], shots: [] });
+    expect(foreignPaths(join(dir, ".CLI.json"), true)).toEqual(new Set());
+    expect(foreignPaths(join(dir, ".CLI.json"), false)).toEqual(new Set([join(dir, "own.md")]));
+  });
+
   it("is empty when the directory does not exist", () => {
-    expect(foreignPaths(join(dir, "missing/.e2g.json"))).toEqual(new Set());
+    expect(foreignPaths(join(dir, "missing/.e2g.json"), false)).toEqual(new Set());
   });
 });
 
@@ -191,5 +198,55 @@ describe("caseInsensitive", () => {
 
   it("probes the nearest existing ancestor of a missing directory", () => {
     expect(caseInsensitive(join(dir, "missing/docs"))).toBe(caseInsensitive(dir));
+  });
+
+  it("leaves no probe file behind", () => {
+    caseInsensitive(dir);
+    expect(readdirSync(dir)).toEqual([]);
+  });
+
+  // A case-insensitive volume at /mnt/c under a case-sensitive root.
+  function mountedFs(writable = true): ProbeFs & { files: Set<string> } {
+    const dirs = new Set(["/", "/mnt", "/mnt/c", "/mnt/c/docs", "/home", "/home/docs"]);
+    const files = new Set<string>();
+    const canonical = (path: string) =>
+      path === "/mnt/c" || path.startsWith("/mnt/c/")
+        ? `/mnt/c${path.slice(6).toLowerCase()}`
+        : path;
+    const ids = new Map<string, number>();
+    const id = (path: string) => {
+      if (!ids.has(path)) ids.set(path, ids.size + 1);
+      return ids.get(path)!;
+    };
+    return {
+      files,
+      statSync(path) {
+        const key = canonical(path);
+        if (!dirs.has(key) && !files.has(key)) throw new Error(`ENOENT ${path}`);
+        return { ino: id(key), dev: 1, isDirectory: () => dirs.has(key) };
+      },
+      writeFileSync(path) {
+        if (!writable) throw new Error("EROFS");
+        files.add(canonical(path));
+      },
+      rmSync(path) {
+        files.delete(canonical(path));
+      },
+    };
+  }
+
+  it("judges a mounted volume by its own rules, not its ancestors'", () => {
+    const fs = mountedFs();
+    expect(caseInsensitive("/mnt/c/docs", fs)).toBe(true);
+    expect(caseInsensitive("/mnt/c/docs/missing/deeper", fs)).toBe(true);
+    expect(caseInsensitive("/home/docs", fs)).toBe(false);
+    expect(caseInsensitive("/home/missing", fs)).toBe(false);
+    expect(fs.files.size).toBe(0);
+  });
+
+  it("compares the directory's own name when it cannot write a probe", () => {
+    const fs = mountedFs(false);
+    expect(caseInsensitive("/mnt/c/docs", fs)).toBe(true);
+    expect(caseInsensitive("/home/docs", fs)).toBe(false);
   });
 });

@@ -54,7 +54,8 @@ function expand(
   return template.replace(/\$(\$|&|\d{1,2}|<[^>]*>)/g, (token, key: string) => {
     if (key === "$") return "$";
     if (key === "&") return match;
-    if (key.startsWith("<")) return named?.[key.slice(1, -1)] ?? "";
+    // Without named groups String.prototype.replace leaves $<name> as written.
+    if (key.startsWith("<")) return named ? (named[key.slice(1, -1)] ?? "") : token;
     // As in String.prototype.replace: a group that exists but did not take part
     // is empty, and $nm falls back to $n followed by m when group nm does not exist.
     const n = Number(key);
@@ -139,16 +140,19 @@ export function replaceRow(
   for (const [pattern, replacement] of replace) {
     const current = head;
     const spans = findSpans(current, pattern, replacement);
-    for (const span of spans.reverse()) {
-      const n = span.to - span.from;
+    if (spans.length === 0) continue;
+    // One pass over the spans in order keeps many matches on a long line linear.
+    head = [];
+    let at = 0;
+    for (const span of spans) {
+      for (; at < span.from; at++) head.push(current[at]!);
       const source = (i: number): Cell =>
         current[Math.min(span.from + i, span.to - 1)] ?? current[span.from]!;
-      head = [
-        ...head.slice(0, span.from),
-        ...cellsFor(span.text, source, fixedWidth ? n : null),
-        ...head.slice(span.to),
-      ];
+      for (const cell of cellsFor(span.text, source, fixedWidth ? span.to - span.from : null))
+        head.push(cell);
+      at = span.to;
     }
+    for (; at < current.length; at++) head.push(current[at]!);
   }
   return { row: [...head, ...tail], end: head.length };
 }

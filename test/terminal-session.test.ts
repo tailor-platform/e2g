@@ -117,6 +117,23 @@ describe("Session", () => {
     await session.waitForText("cursor at 1,3", { timeout: 3_000 });
   });
 
+  it("sends cursor keys as SS3 once the program enables application cursor mode", async () => {
+    const echo = (mode: string) =>
+      [
+        `process.stdin.setRawMode(true); process.stdout.write("${mode}ready\\n");`,
+        'process.stdin.on("data", (d) => { console.log("got " + JSON.stringify(d.toString()));',
+        "process.exit(0); });",
+      ].join(" ");
+    const app = await make().spawn(`node -e '${echo("\\x1b[?1h")}'`);
+    await app.waitForText("ready");
+    app.press("ArrowDown");
+    await app.waitForText('got "\\u001bOB"');
+    const normal = await make().spawn(`node -e '${echo("")}'`);
+    await normal.waitForText("ready");
+    normal.press("ArrowDown");
+    await normal.waitForText('got "\\u001b[B"');
+  });
+
   it("settle waits for a redraw after a key even when the screen was idle", async () => {
     const script = [
       'process.stdin.setRawMode(true); process.stdout.write("ready");',

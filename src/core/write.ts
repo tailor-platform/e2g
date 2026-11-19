@@ -35,6 +35,7 @@ export function writeGuides(input: WriteGuidesInput): boolean {
   const shotsDir = at(shots.dir);
   const manifestPath = at(input.manifest);
   const manifestDir = dirname(manifestPath);
+  const insensitive = caseInsensitive(manifestDir);
   const manifest = readManifest(manifestPath);
   const previous = manifest ?? EMPTY_MANIFEST;
   if (!manifest)
@@ -50,8 +51,8 @@ export function writeGuides(input: WriteGuidesInput): boolean {
       path: (page) => at(output.path(page)),
       render: (page) => output.render(page),
     },
-    foreign: foreignPaths(manifestPath),
-    caseInsensitive: caseInsensitive(manifestDir),
+    foreign: foreignPaths(manifestPath, insensitive),
+    caseInsensitive: insensitive,
     shotPath: (page, name, variant, ext) =>
       shots.path
         ? at(shots.path(page, name, variant, ext))

@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createTerminal, renderTerminal, snapshot } from "../src/terminal/render.js";
+import { replaceRow, rowText } from "../src/terminal/replace.js";
+import type { Cell } from "../src/terminal/svg.js";
 
 describe("renderTerminal", () => {
   it("keeps only the final state of carriage-return redraws", async () => {
@@ -62,6 +64,10 @@ describe("renderTerminal", () => {
       ["id", /(i)d/, "$12"],
       ["id", /id/, "$1"],
       ["id", /(?<a>x)?id/, "[$<a>]"],
+      ["id", /id/, "$<x>"],
+      ["id", /(i)d/, "[$<x>]"],
+      ["id", /(?<a>i)d/, "[$<b>]"],
+      ["id", /(?<a>i)d/, "[$<a>]"],
     ];
     for (const [input, pattern, replacement] of cases) {
       const { text } = await renderTerminal(input, { replace: [[pattern, replacement]] });
@@ -70,6 +76,26 @@ describe("renderTerminal", () => {
     expect((await renderTerminal("id", { replace: [[/(prefix)?id/, "$1stable"]] })).text).toBe(
       "stable",
     );
+  });
+
+  it("replaces many matches on a long logical line in linear time", () => {
+    const cell = (chars: string): Cell => ({
+      chars,
+      width: 1,
+      fg: { kind: "default" },
+      bg: { kind: "default" },
+      bold: false,
+      underline: false,
+      inverse: false,
+    });
+    const line = "abcdefghi:".repeat(10_000);
+    const row = [...line].map(cell);
+    const started = performance.now();
+    const { row: out, end } = replaceRow(row, [[/:/g, "--"]], false);
+    expect(performance.now() - started).toBeLessThan(2_000);
+    expect(end).toBe(110_000);
+    expect(rowText(out.slice(0, 33))).toBe("abcdefghi--abcdefghi--abcdefghi--");
+    expect(rowText(out)).toBe(line.replace(/:/g, "--"));
   });
 
   it("replaces a token that wrapped at cols", async () => {

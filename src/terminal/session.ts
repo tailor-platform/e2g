@@ -75,7 +75,7 @@ export class Session {
   }
 
   press(key: string): void {
-    this.proc.write(keySequence(key));
+    this.proc.write(keySequence(key, this.term.modes.applicationCursorKeysMode));
   }
 
   screen(): string {
