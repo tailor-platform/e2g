@@ -14,7 +14,7 @@ export default defineConfig({
       guidesReporter({
         output,
         shots: { dir: "docs/assets/guides" },
-        manifest: "docs/.guides.json",
+        manifest: "docs/.cli-guides.json",
         prune: true,
       }),
     ],

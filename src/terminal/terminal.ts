@@ -30,19 +30,30 @@ export interface RunResult {
 const DEFAULT_COLS = 80;
 const DEFAULT_ROWS = 24;
 const DEFAULT_IDLE = 100;
+const KILL_GRACE = 2_000;
+
+const delay = (ms: number) => {
+  let timer: NodeJS.Timeout | undefined;
+  const promise = new Promise<void>((resolve) => {
+    timer = setTimeout(resolve, ms);
+  });
+  return { promise, cancel: () => clearTimeout(timer) };
+};
 
 export class Terminal {
   readonly options: TerminalOptions;
-  private readonly running = new Set<PtyProcess>();
+  /** Each live process and the promise that settles when it exits. */
+  private readonly running = new Map<PtyProcess, Promise<void>>();
   private readonly sessions = new Set<Session>();
   private disposed = false;
+  private disposing: Promise<void> | undefined;
 
   constructor(options: TerminalOptions = {}) {
     this.options = options;
   }
 
   async run(command: string): Promise<RunResult> {
-    const { proc, stream } = await this.start(command);
+    const stream = await this.start(command);
     let output = "";
     stream.onData((data) => {
       output += data;
@@ -50,12 +61,11 @@ export class Terminal {
     const exitCode = await new Promise<number>((resolve) => {
       stream.onExit((event) => resolve(event.exitCode));
     });
-    this.running.delete(proc);
     return { command, output, exitCode };
   }
 
   async spawn(command: string): Promise<Session> {
-    const { proc, stream } = await this.start(command);
+    const stream = await this.start(command);
     const term = createTerminal({
       cols: this.options.cols ?? DEFAULT_COLS,
       rows: this.options.rows ?? DEFAULT_ROWS,
@@ -70,19 +80,37 @@ export class Terminal {
       theme: this.options.theme,
     });
     this.sessions.add(session);
-    proc.onExit(() => this.running.delete(proc));
     return session;
   }
 
-  async dispose(): Promise<void> {
+  /** Stops every process and resolves once they have exited, so their shutdown never outlives the terminal. */
+  dispose(): Promise<void> {
+    this.disposing ??= this.stop();
+    return this.disposing;
+  }
+
+  private async stop(): Promise<void> {
     this.disposed = true;
-    for (const proc of this.running) proc.kill();
+    const procs = [...this.running];
+    // a process that ignores the hangup gets SIGKILL after a grace period, and one that survives even
+    // that is left alone after a second one rather than hanging the caller
+    for (const [proc] of procs) proc.kill();
+    const exited = Promise.all(procs.map(([, exit]) => exit));
+    const grace = delay(KILL_GRACE);
+    const first = await Promise.race([exited.then(() => true), grace.promise.then(() => false)]);
+    grace.cancel();
+    if (!first) {
+      for (const [proc] of procs) if (this.running.has(proc)) proc.kill("SIGKILL");
+      const last = delay(KILL_GRACE);
+      await Promise.race([exited, last.promise]);
+      last.cancel();
+    }
     this.running.clear();
     for (const session of this.sessions) session.dispose();
     this.sessions.clear();
   }
 
-  private async start(command: string): Promise<{ proc: PtyProcess; stream: PtyProcess }> {
+  private async start(command: string): Promise<PtyProcess> {
     if (this.disposed) throw new Error("terminal is disposed");
     const pty = await loadPty();
     if (this.disposed) throw new Error("terminal is disposed");
@@ -97,7 +125,15 @@ export class Terminal {
       env: buildEnv({ ...this.options, cols, rows }),
     });
     const proc = drained(raw);
-    this.running.add(proc);
-    return { proc, stream: aliased(proc, this.options.aliases ?? []) };
+    this.running.set(
+      proc,
+      new Promise<void>((resolve) => {
+        proc.onExit(() => {
+          this.running.delete(proc);
+          resolve();
+        });
+      }),
+    );
+    return aliased(proc, this.options.aliases ?? []);
   }
 }

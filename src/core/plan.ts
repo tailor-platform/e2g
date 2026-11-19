@@ -25,6 +25,8 @@ export interface PlanInput {
   ): string;
   /** Absolute paths other manifests own, which this one must not write. */
   foreign: Set<string>;
+  /** Whether the file system treats paths that differ only in case as one file. */
+  caseInsensitive: boolean;
   manifestDir: string;
   manifest: Manifest;
   current(path: string): Buffer | null;
@@ -103,10 +105,10 @@ function collisions(targets: Target[]): string[] {
   return errors;
 }
 
-function foreignWrites(targets: Target[], foreign: Set<string>): string[] {
-  const owned = new Set([...foreign].map(fileKey));
+function foreignWrites(targets: Target[], foreign: Set<string>, id: Identity): string[] {
+  const owned = new Set([...foreign].map(id));
   return targets
-    .filter((t) => owned.has(fileKey(t.path)))
+    .filter((t) => owned.has(id(t.path)))
     .map((t) => `page ${t.owner} writes ${t.path}, which another manifest owns`);
 }
 
@@ -142,19 +144,35 @@ function union(a: Manifest, b: Manifest): Manifest {
 const fileKey = (path: string) => resolvePath(path, ".");
 const caseKey = (path: string) => fileKey(path).toLowerCase();
 
-function stale(old: Manifest, targets: Target[], manifestDir: string, foreign: Set<string>): Op[] {
-  const keep = new Set([...targets.map((t) => t.path), ...foreign].map(fileKey));
+type Identity = (path: string) => string;
+
+// a target keeps its exact spelling so a case-only rename deletes the old name; another manifest's file is
+// the same file under any spelling the file system treats as one
+function stale(
+  old: Manifest,
+  targets: Target[],
+  manifestDir: string,
+  foreign: Set<string>,
+  id: Identity,
+): Op[] {
+  const keep = new Set(targets.map((t) => fileKey(t.path)));
+  const owned = new Set([...foreign].map(id));
   return [...new Set([...old.pages, ...old.shots])]
     .map((entry) => resolvePath(manifestDir, entry))
-    .filter((path) => !keep.has(fileKey(path)))
+    .filter((path) => !keep.has(fileKey(path)) && !owned.has(id(path)))
     .map((path) => ({ op: "delete", path }));
 }
 
 // a file another manifest also lists is theirs to keep, so this manifest lets go of it
-function relinquish(manifest: Manifest, manifestDir: string, foreign: Set<string>): Manifest {
-  const owned = new Set([...foreign].map(fileKey));
+function relinquish(
+  manifest: Manifest,
+  manifestDir: string,
+  foreign: Set<string>,
+  id: Identity,
+): Manifest {
+  const owned = new Set([...foreign].map(id));
   const mine = (entries: string[]) =>
-    entries.filter((entry) => !owned.has(fileKey(resolvePath(manifestDir, entry))));
+    entries.filter((entry) => !owned.has(id(resolvePath(manifestDir, entry))));
   return { schemaVersion: 1, pages: mine(manifest.pages), shots: mine(manifest.shots) };
 }
 
@@ -171,24 +189,27 @@ function pruneBlocker(input: PlanInput): string | undefined {
 export function plan(input: PlanInput): Plan {
   if (input.scope.partial) return nothing(because([input.scope.reason]));
   if (input.errors.length > 0) return nothing([], because(input.errors));
+  const id: Identity = input.caseInsensitive ? caseKey : fileKey;
   const targets = input.pages.flatMap((page) => targetsOf(page, input));
-  const clashes = [...collisions(targets), ...foreignWrites(targets, input.foreign)];
+  const clashes = [...collisions(targets), ...foreignWrites(targets, input.foreign, id)];
   if (clashes.length > 0) return nothing([], because(clashes));
 
   const messages = input.incomplete.map((entry) => `did not write ${entry}`);
   const blocker = pruneBlocker(input);
   if (blocker) messages.push(blocker);
   const pruning = input.prune && !blocker;
-  const deletes = pruning ? stale(input.manifest, targets, input.manifestDir, input.foreign) : [];
+  const deletes = pruning
+    ? stale(input.manifest, targets, input.manifestDir, input.foreign, id)
+    : [];
   // on a case-insensitive file system the delete removes the target too, so it must be written again
-  const deleted = new Set(deletes.map((d) => caseKey(d.path)));
+  const deleted = new Set(deletes.map((d) => id(d.path)));
   const writes: Op[] = targets
-    .filter((t) => deleted.has(caseKey(t.path)) || !unchanged(t, input))
+    .filter((t) => deleted.has(id(t.path)) || !unchanged(t, input))
     .map(({ path, data }) => ({ op: "write", path, data }));
   const made = produced(targets, input.manifestDir);
   const next = pruning
     ? made
-    : union(relinquish(input.manifest, input.manifestDir, input.foreign), made);
+    : union(relinquish(input.manifest, input.manifestDir, input.foreign, id), made);
   const manifest = sameManifest(input.manifest, next) ? null : next;
   return { ops: [...deletes, ...writes], manifest, messages, errors: [] };
 }

@@ -15,6 +15,19 @@ describe("renderTerminal", () => {
     expect((await renderTerminal("a\x1b[8m日本\x1b[0mb")).text).toBe("a    b");
   });
 
+  it("keeps a trailing row of painted blanks without trailing spaces in text", async () => {
+    expect((await renderTerminal("\x1b[41m   \x1b[0m")).text).toBe("");
+    expect((await renderTerminal("ok\n\x1b[7m  \x1b[0m\n\n")).text).toBe("ok\n");
+    expect((await renderTerminal("ok\x1b[44m  \x1b[0m")).text).toBe("ok");
+  });
+
+  it("counts a painted row at the bottom of the viewport", async () => {
+    const term = createTerminal({ cols: 10, rows: 4 });
+    await new Promise<void>((resolve) => term.write("ok\n\x1b[41m  \x1b[0m", resolve));
+    expect(snapshot(term, { viewport: true }).text).toBe("ok\n");
+    term.dispose();
+  });
+
   it("wraps at cols", async () => {
     const { text } = await renderTerminal("a".repeat(85), { cols: 80 });
     expect(text.split("\n").map((l) => l.length)).toEqual([80, 5]);
@@ -40,6 +53,23 @@ describe("renderTerminal", () => {
   it("applies replacements to text", async () => {
     const { text } = await renderTerminal("done in 345ms", { replace: [[/\d+ms/g, "12ms"]] });
     expect(text).toBe("done in 12ms");
+  });
+
+  it("expands capture groups as String.prototype.replace does", async () => {
+    const cases: [string, RegExp, string][] = [
+      ["id", /(prefix)?id/, "$1stable"],
+      ["id", /(i)d/, "$2-$1"],
+      ["id", /(i)d/, "$12"],
+      ["id", /id/, "$1"],
+      ["id", /(?<a>x)?id/, "[$<a>]"],
+    ];
+    for (const [input, pattern, replacement] of cases) {
+      const { text } = await renderTerminal(input, { replace: [[pattern, replacement]] });
+      expect(text).toBe(input.replace(pattern, replacement));
+    }
+    expect((await renderTerminal("id", { replace: [[/(prefix)?id/, "$1stable"]] })).text).toBe(
+      "stable",
+    );
   });
 
   it("replaces a token that wrapped at cols", async () => {

@@ -34,6 +34,17 @@ export function contentWidth(row: CellRow): number {
   return 0;
 }
 
+// A blank with a background or inverse colors still shows as a block, so it
+// counts here even though translateToString(true) would trim it.
+export function paintedWidth(row: CellRow): number {
+  for (let i = row.length - 1; i >= 0; i--) {
+    const cell = row[i]!;
+    if (cell.width > 0 && (cell.chars.trim() !== "" || cell.inverse || cell.bg.kind !== "default"))
+      return i + cell.width;
+  }
+  return 0;
+}
+
 function expand(
   template: string,
   match: string,
@@ -44,7 +55,14 @@ function expand(
     if (key === "$") return "$";
     if (key === "&") return match;
     if (key.startsWith("<")) return named?.[key.slice(1, -1)] ?? "";
-    return groups[Number(key) - 1] ?? token;
+    // As in String.prototype.replace: a group that exists but did not take part
+    // is empty, and $nm falls back to $n followed by m when group nm does not exist.
+    const n = Number(key);
+    if (n >= 1 && n <= groups.length) return groups[n - 1] ?? "";
+    const first = Number(key[0]);
+    if (key.length === 2 && first >= 1 && first <= groups.length)
+      return (groups[first - 1] ?? "") + key[1];
+    return token;
   });
 }
 

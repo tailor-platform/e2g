@@ -83,7 +83,8 @@ interface Recorder {
 function createGuide(locale: Locale | undefined, terminal: TerminalOptions): Recorder {
   const owner = {};
   const blocks: Block<TakenShot, null>[] = [];
-  const svgs: Record<string, string> = {};
+  // a screen may be named __proto__, which a plain object would take as its prototype
+  const svgs: Record<string, string> = Object.create(null);
   const names = new Set<string>();
   const inGuideRun = locale !== undefined;
   let open = 0;

@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -100,6 +100,45 @@ describe("Terminal.run", () => {
     await t.dispose();
     // Resolving well inside the test timeout proves the 30s sleep was killed.
     await pending;
+  });
+
+  it("dispose waits for a process's shutdown handler and leaves no timers", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "e2g-dispose-"));
+    try {
+      const marker = join(dir, "done");
+      const script = [
+        "const stop = () => setTimeout(() => {",
+        `require('fs').writeFileSync(${JSON.stringify(marker)}, 'x'); process.exit(0);`,
+        "}, 200);",
+        "process.on('SIGHUP', stop); process.on('SIGTERM', stop);",
+        "setInterval(() => {}, 1000); console.log('ready');",
+      ].join(" ");
+      const timers = () => process.getActiveResourcesInfo().filter((r) => r === "Timeout").length;
+      const before = timers();
+      const t = make();
+      const session = await t.spawn(`node -e ${JSON.stringify(script)}`);
+      await session.waitForText("ready");
+      const pid = session.pid;
+      await Promise.all([t.dispose(), t.dispose()]);
+      expect(existsSync(marker)).toBe(true);
+      expect(() => process.kill(pid, 0)).toThrow();
+      expect(timers()).toBe(before);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("dispose kills a process that ignores the hangup", async () => {
+    const t = make();
+    const script =
+      "process.on('SIGHUP', () => {}); setInterval(() => {}, 1000); console.log('ready');";
+    const session = await t.spawn(`node -e ${JSON.stringify(script)}`);
+    await session.waitForText("ready");
+    const pid = session.pid;
+    const started = Date.now();
+    await t.dispose();
+    expect(Date.now() - started).toBeGreaterThanOrEqual(1_900);
+    expect(() => process.kill(pid, 0)).toThrow();
   });
 
   it("dispose is safe to call twice", async () => {

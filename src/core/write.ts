@@ -1,6 +1,6 @@
 import { dirname, join, resolve } from "node:path";
 import { collectPages, type ExpectedTest, type TestOutcome } from "./collect.js";
-import { commit, EMPTY_MANIFEST, readFile, readManifest } from "./io.js";
+import { caseInsensitive, commit, EMPTY_MANIFEST, readFile, readManifest } from "./io.js";
 import { foreignPaths } from "./manifests.js";
 import { plan } from "./plan.js";
 import type { GuideOutput, PageInfo, RunScope } from "./types.js";
@@ -51,6 +51,7 @@ export function writeGuides(input: WriteGuidesInput): boolean {
       render: (page) => output.render(page),
     },
     foreign: foreignPaths(manifestPath),
+    caseInsensitive: caseInsensitive(manifestDir),
     shotPath: (page, name, variant, ext) =>
       shots.path
         ? at(shots.path(page, name, variant, ext))

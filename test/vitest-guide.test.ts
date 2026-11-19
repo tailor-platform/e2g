@@ -68,6 +68,20 @@ describe("in a guide run", () => {
     expect(session.capture).toHaveBeenCalledWith([["x", "y"]]);
   });
 
+  test("keeps the svg of a screen named __proto__", page, async ({ guide, onTestFinished }) => {
+    onTestFinished(({ task }) => {
+      const svgs = task.meta[META_KEY]?.record?.svgs ?? {};
+      expect(Object.entries(svgs)).toEqual([["__proto__", "<svg>> one</svg>"]]);
+      expect(Object.entries(structuredClone(svgs))).toEqual([["__proto__", "<svg>> one</svg>"]]);
+      expect(Object.entries(JSON.parse(JSON.stringify(svgs)))).toEqual([
+        ["__proto__", "<svg>> one</svg>"],
+      ]);
+    });
+    await guide.step("Pick one.", async () => {
+      await guide.screen("__proto__", fakeSession("> one"), { alt: "The picker" });
+    });
+  });
+
   test("exposes the locale", async ({ guide }) => {
     expect(guide.locale).toBe("en");
   });

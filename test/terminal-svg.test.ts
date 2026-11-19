@@ -66,6 +66,33 @@ describe("terminal svg", () => {
     expect(svg).toMatch(/<text [^>]*fill="var\(--e2g-bg\)"[^>]*>hi<\/text>/);
   });
 
+  it("keeps a block of blanks with a background", async () => {
+    const { svg } = await renderTerminal("\x1b[41m   \x1b[0m");
+    expect(svg).toContain(
+      '<rect x="0.00" y="0.00" width="28.80" height="20.00" fill="var(--e2g-1)"/>',
+    );
+  });
+
+  it("keeps an inverse block on a trailing row", async () => {
+    const { svg } = await renderTerminal("ok\n\x1b[7m  \x1b[0m");
+    expect(svg).toContain(
+      '<rect x="0.00" y="20.00" width="19.20" height="20.00" fill="var(--e2g-fg)"/>',
+    );
+  });
+
+  it("rewraps a painted block after a replacement shortens a wrapped line", async () => {
+    const { svg } = await renderTerminal(`token\x1b[41m${" ".repeat(10)}\x1b[0m`, {
+      cols: 8,
+      replace: [[/token/, "t"]],
+    });
+    expect(svg).toContain(
+      '<rect x="9.60" y="0.00" width="67.20" height="20.00" fill="var(--e2g-1)"/>',
+    );
+    expect(svg).toContain(
+      '<rect x="0.00" y="20.00" width="28.80" height="20.00" fill="var(--e2g-1)"/>',
+    );
+  });
+
   it("renderTerminal covers content lines and viewport covers every row", async () => {
     const content = await renderTerminal("a\nb\n\n\n");
     expect(content.svg).toContain('height="72.00"');

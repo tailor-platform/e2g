@@ -386,6 +386,8 @@ Vitest 5 or later is a peer dependency. `@lydell/node-pty` is an optional peer, 
 
 Register your locales as in [step 2](#2-register-your-locales), then add a guides config. `guideProjects` makes one Vitest project per locale, and `guidesReporter` writes the pages, with the same `output`, `manifest` and `prune` as the [Playwright reporter](#reporter). Screens are written under `shots.dir` as `.svg`, at `<locale>/<slug>/<name>.svg`; `shots.path(page, name, ext)` returns another path, where `ext` is always `"svg"` and `page` has no `blocks`.
 
+Give the Vitest reporter its own manifest, such as `docs/.cli-guides.json`; never share one with the Playwright reporter. With `prune`, a runner deletes every file in its manifest that its own run did not produce, so a shared manifest would let each runner delete the other's pages. Separate manifests in the same directory see each other's files, so neither runner writes or prunes what the other owns.
+
 ```ts
 // vitest.guides.config.ts
 import { defineConfig } from "vitest/config";
@@ -403,7 +405,7 @@ export default defineConfig({
       guidesReporter({
         output,
         shots: { dir: "docs/assets/guides" },
-        manifest: "docs/.guides.json",
+        manifest: "docs/.cli-guides.json",
         prune: true,
       }),
     ],

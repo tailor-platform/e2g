@@ -52,6 +52,7 @@ function input(over: Partial<PlanInput> = {}): PlanInput {
     shotPath: (p: PageInfo<unknown>, name: string, variant: string | undefined, ext = "png") =>
       `/site/assets/${p.locale}/${p.slug}/${variant ? `${variant}/` : ""}${name}.${ext}`,
     foreign: new Set(),
+    caseInsensitive: false,
     manifestDir: "/site/docs",
     manifest: empty,
     current: () => null,
@@ -228,6 +229,44 @@ describe("plan", () => {
     expect(result.manifest?.pages).toEqual(["en/intro.md"]);
   });
 
+  describe("another manifest's file under another spelling", () => {
+    const foreign = new Set(["/site/docs/en/Intro.md"]);
+
+    it("blocks the write on a case-insensitive file system", () => {
+      const result = plan(input({ foreign, caseInsensitive: true }));
+      expect(result.ops).toEqual([]);
+      expect(result.errors).toEqual([
+        "wrote no guide pages because page intro/en writes /site/docs/en/intro.md, which another manifest owns",
+      ]);
+    });
+
+    it("is another file on a case-sensitive file system", () => {
+      const result = plan(input({ foreign }));
+      expect(result.errors).toEqual([]);
+      expect(writes(result.ops)).toContain("/site/docs/en/intro.md");
+    });
+
+    it("is neither pruned nor kept on a case-insensitive file system", () => {
+      const old: Manifest = { schemaVersion: 1, pages: ["en/intro.md", "en/shared.md"], shots: [] };
+      const shared = new Set(["/site/docs/en/SHARED.md"]);
+      const pruned = plan(
+        input({ manifest: old, prune: true, foreign: shared, caseInsensitive: true }),
+      );
+      expect(deletes(pruned.ops)).toEqual([]);
+      const kept = plan(input({ manifest: old, foreign: shared, caseInsensitive: true }));
+      expect(kept.manifest?.pages).toEqual(["en/intro.md"]);
+    });
+
+    it("is pruned and kept as this manifest's own on a case-sensitive file system", () => {
+      const old: Manifest = { schemaVersion: 1, pages: ["en/intro.md", "en/shared.md"], shots: [] };
+      const shared = new Set(["/site/docs/en/SHARED.md"]);
+      const pruned = plan(input({ manifest: old, prune: true, foreign: shared }));
+      expect(deletes(pruned.ops)).toEqual(["/site/docs/en/shared.md"]);
+      const kept = plan(input({ manifest: old, foreign: shared }));
+      expect(kept.manifest?.pages).toEqual(["en/intro.md", "en/shared.md"]);
+    });
+  });
+
   it("prune with an incomplete page deletes nothing", () => {
     const old: Manifest = { schemaVersion: 1, pages: ["en/gone.md"], shots: [] };
     const result = plan(input({ manifest: old, prune: true, incomplete: ["intro/ja"] }));
@@ -293,6 +332,7 @@ describe("plan", () => {
         prune: true,
         manifest: old,
         pages: [page("intro", ["Menu"])],
+        caseInsensitive: true,
         output: { ...output, path: (p) => `/site/docs/${p.locale}/Intro.md` },
         // a case-insensitive file system returns the old file for either spelling
         current: (path) => (path.toLowerCase().endsWith(".md") ? text : png("intro-Menu")),

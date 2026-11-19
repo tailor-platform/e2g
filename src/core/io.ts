@@ -5,11 +5,34 @@ import {
   renameSync,
   rmdirSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from "node:fs";
 import { dirname, isAbsolute, relative, sep } from "node:path";
 import { relativePath } from "./paths.js";
 import type { Manifest, Op } from "./types.js";
+
+const swapCase = (path: string) =>
+  path.replace(/[a-z]/gi, (c) => (c === c.toLowerCase() ? c.toUpperCase() : c.toLowerCase()));
+
+/** Whether the file system holding `dir`, or its nearest existing ancestor, treats paths that differ only in case as one file. */
+export function caseInsensitive(dir: string): boolean {
+  for (let at = dir; ; at = dirname(at)) {
+    const other = swapCase(at);
+    if (other !== at) {
+      try {
+        const a = statSync(at);
+        try {
+          const b = statSync(other);
+          return a.ino === b.ino && a.dev === b.dev;
+        } catch {
+          return false;
+        }
+      } catch {}
+    }
+    if (dirname(at) === at) return process.platform === "darwin" || process.platform === "win32";
+  }
+}
 
 export const EMPTY_MANIFEST: Manifest = { schemaVersion: 1, pages: [], shots: [] };
 

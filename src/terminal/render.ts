@@ -1,6 +1,6 @@
 import xterm from "@xterm/headless";
 import type { IBufferCell, Terminal as HeadlessTerminal } from "@xterm/headless";
-import { contentWidth, replaceRow, rowText, type Replacement } from "./replace.js";
+import { contentWidth, paintedWidth, replaceRow, rowText, type Replacement } from "./replace.js";
 import { bufferToSvg, type Cell, type CellColor, type CellRow } from "./svg.js";
 import type { TerminalTheme } from "./theme.js";
 
@@ -85,10 +85,13 @@ function joinRows(term: HeadlessTerminal, ys: number[], rows: CellRow[]): CellRo
   });
 }
 
+// Painted blanks after the text wrap along with it so a colored block survives
+// a replacement that changes the line's length.
 function wrapRow(head: CellRow, tail: CellRow, cols: number): CellRow[] {
   const rows: CellRow[] = [];
   let current: CellRow = [];
-  for (const cell of head) {
+  const painted = paintedWidth(tail);
+  for (const cell of [...head, ...tail.slice(0, painted)]) {
     if (cell.width !== 0 && current.length + cell.width > cols) {
       while (current.length < cols) current.push(BLANK);
       rows.push(current);
@@ -96,7 +99,7 @@ function wrapRow(head: CellRow, tail: CellRow, cols: number): CellRow[] {
     }
     current.push(cell);
   }
-  current.push(...tail.slice(0, Math.max(0, cols - current.length)));
+  current.push(...tail.slice(painted, painted + Math.max(0, cols - current.length)));
   rows.push(current);
   return rows;
 }
@@ -124,7 +127,12 @@ export function snapshot(
   if (options.viewport) {
     const replaced = rows.map((row) => replaceRow(row, replace, true));
     const lines = replaced.map((r) => rowText(r.row.slice(0, r.end)));
-    while (lines.length > 0 && lines[lines.length - 1] === "") lines.pop();
+    while (
+      lines.length > 0 &&
+      lines[lines.length - 1] === "" &&
+      paintedWidth(replaced[lines.length - 1]!.row) === 0
+    )
+      lines.pop();
     const cells = replaced.map((r) => r.row);
     return { text: lines.join("\n"), svg: bufferToSvg(cells, term.cols, options.theme) };
   }
@@ -140,7 +148,7 @@ export function snapshot(
       last.rows.push(row);
     } else groups.push({ ys: [y], rows: [row] });
   });
-  while (groups.length > 0 && groups[groups.length - 1]!.rows.every((r) => contentWidth(r) === 0))
+  while (groups.length > 0 && groups[groups.length - 1]!.rows.every((r) => paintedWidth(r) === 0))
     groups.pop();
   const cells = groups.flatMap((group) => {
     const { row, end } = replaceRow(joinRows(term, group.ys, group.rows), replace, false);

@@ -10,7 +10,14 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { apply, commit, readFile, readManifest, writeManifest } from "../src/core/io.js";
+import {
+  apply,
+  caseInsensitive,
+  commit,
+  readFile,
+  readManifest,
+  writeManifest,
+} from "../src/core/io.js";
 import { foreignPaths } from "../src/core/manifests.js";
 
 let dir: string;
@@ -173,5 +180,16 @@ describe("foreignPaths", () => {
 
   it("is empty when the directory does not exist", () => {
     expect(foreignPaths(join(dir, "missing/.e2g.json"))).toEqual(new Set());
+  });
+});
+
+describe("caseInsensitive", () => {
+  it("matches whether the file system finds a file under another spelling", () => {
+    writeFileSync(join(dir, "probe"), "");
+    expect(caseInsensitive(dir)).toBe(existsSync(join(dir, "PROBE")));
+  });
+
+  it("probes the nearest existing ancestor of a missing directory", () => {
+    expect(caseInsensitive(join(dir, "missing/docs"))).toBe(caseInsensitive(dir));
   });
 });
