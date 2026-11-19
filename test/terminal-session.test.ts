@@ -1,6 +1,7 @@
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import { Terminal } from "../src/terminal/index.js";
+import { burst } from "./burst.js";
 
 const picker = fileURLToPath(new URL("./fixtures/picker.mjs", import.meta.url));
 
@@ -64,6 +65,15 @@ describe("Session", () => {
     );
     await session.waitForText("READY");
     expect(await session.waitForExit()).toBe(0);
+  });
+
+  it("shows output still unread in the pty when the process exits", async () => {
+    const { command, whileBlocked } = burst();
+    const session = await make().spawn(command);
+    await whileBlocked();
+    await session.waitForText("END");
+    expect(await session.waitForExit()).toBe(0);
+    expect(session.screen()).toContain("line 1000");
   });
 
   it("screen settle times out", async () => {

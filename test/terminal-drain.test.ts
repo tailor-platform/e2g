@@ -1,13 +1,18 @@
+import { closeSync, mkdtempSync, openSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { drained } from "../src/terminal/drain.js";
-import type { ExitEvent, PtyProcess } from "../src/terminal/pty.js";
+import type { ExitEvent, PtyProcess, RawPtyProcess } from "../src/terminal/pty.js";
 
-function fakePty() {
-  let onData: (data: string) => void = () => {};
+function fakePty(fd?: number) {
+  let onData: (data: string | Buffer) => void = () => {};
   let onExit: (event: ExitEvent) => void = () => {};
+  let onEnd: () => void = () => {};
   const kill = vi.fn();
-  const proc: PtyProcess = {
+  const proc: RawPtyProcess = {
     pid: 1,
+    fd,
     write: () => {},
     kill,
     onData: (listener) => {
@@ -18,11 +23,15 @@ function fakePty() {
       onExit = listener;
       return { dispose: () => {} };
     },
+    on: (_event, listener) => {
+      onEnd = listener;
+    },
   };
   return {
     proc,
     kill,
-    data: (d: string) => onData(d),
+    data: (d: string | Buffer) => onData(d),
+    end: () => onEnd(),
     exit: (code = 0) => onExit({ exitCode: code }),
   };
 }
@@ -34,48 +43,46 @@ function record(proc: PtyProcess) {
   return events;
 }
 
+const dirs: string[] = [];
+function fileWith(content: Buffer): number {
+  const dir = mkdtempSync(join(tmpdir(), "e2g-drain-"));
+  dirs.push(dir);
+  writeFileSync(join(dir, "rest"), content);
+  return openSync(join(dir, "rest"), "r");
+}
+afterEach(() => {
+  for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+});
+
 describe("drained", () => {
-  afterEach(() => {
-    vi.useRealTimers();
-  });
-
-  it("delivers output that arrives after exit before the exit itself", () => {
-    vi.useFakeTimers();
-    const pty = fakePty();
-    const events = record(drained(pty.proc, { quiet: 50, max: 1_000 }));
+  it("reads what is left on the fd when the stream ends early, before exit", () => {
+    const fd = fileWith(Buffer.from("rest of the output"));
+    const pty = fakePty(fd);
+    const events = record(drained(pty.proc));
+    pty.data(Buffer.from("first "));
+    pty.end();
     pty.exit(0);
-    vi.advanceTimersByTime(30);
-    pty.data("late");
-    vi.advanceTimersByTime(30);
-    expect(events).toEqual(["late"]);
-    vi.advanceTimersByTime(20);
-    expect(events).toEqual(["late", "exit 0"]);
-    pty.data("after");
-    expect(events).toEqual(["late", "exit 0"]);
+    closeSync(fd);
+    expect(events.join("")).toBe("first rest of the outputexit 0");
   });
 
-  it("stops waiting for quiet at the cap", () => {
-    vi.useFakeTimers();
+  it("decodes a character split between a chunk and the drained rest", () => {
+    const bytes = Buffer.from("é");
+    const fd = fileWith(bytes.subarray(1));
+    const pty = fakePty(fd);
+    const events = record(drained(pty.proc));
+    pty.data(bytes.subarray(0, 1));
+    pty.end();
+    closeSync(fd);
+    expect(events).toEqual(["é"]);
+  });
+
+  it("drops output reported after exit", () => {
     const pty = fakePty();
-    const events = record(drained(pty.proc, { quiet: 50, max: 200 }));
+    const events = record(drained(pty.proc));
     pty.exit(2);
-    for (let i = 0; i < 10; i++) {
-      vi.advanceTimersByTime(25);
-      pty.data(".");
-    }
-    expect(events.at(-1)).toBe("exit 2");
-    expect(events.filter((e) => e === ".")).toHaveLength(7);
-  });
-
-  it("flush delivers exit as soon as it is reported and leaves no timer", () => {
-    vi.useFakeTimers();
-    const pty = fakePty();
-    const proc = drained(pty.proc);
-    const events = record(proc);
-    proc.flush();
-    pty.exit(0);
-    expect(events).toEqual(["exit 0"]);
-    expect(vi.getTimerCount()).toBe(0);
+    pty.data("late");
+    expect(events).toEqual(["exit 2"]);
   });
 
   it("does not kill a process that already exited", () => {
@@ -84,6 +91,5 @@ describe("drained", () => {
     pty.exit(0);
     proc.kill();
     expect(pty.kill).not.toHaveBeenCalled();
-    proc.flush();
   });
 });

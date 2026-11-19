@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { renderTerminal, Terminal } from "../src/terminal/index.js";
+import { burst } from "./burst.js";
 
 const terminals: Terminal[] = [];
 function make(options?: ConstructorParameters<typeof Terminal>[0]): Terminal {
@@ -73,6 +74,15 @@ describe("Terminal.run", () => {
     );
     expect(result.output).toContain("line 5000");
     expect(result.output).toContain("line 1\r\n");
+  });
+
+  it("keeps output still unread in the pty when the process exits", async () => {
+    const { command, whileBlocked } = burst();
+    const pending = make().run(command);
+    await whileBlocked();
+    const result = await pending;
+    expect(result.output).toContain("line 1\r\n");
+    expect(result.output.endsWith("line 1000\r\nEND")).toBe(true);
   });
 
   it("rejects a run that races with dispose", async () => {

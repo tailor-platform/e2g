@@ -19,8 +19,21 @@ export interface PtyProcess {
   onExit(listener: (event: ExitEvent) => void): Disposable;
 }
 
+// What spawn returns with `encoding: null`. `fd` and `on` are present on Unix at runtime,
+// though the package's types leave them out.
+export interface RawPtyProcess {
+  readonly pid: number;
+  readonly fd?: number;
+  write(data: string): void;
+  kill(signal?: string): void;
+  onData(listener: (data: string | Buffer) => void): Disposable;
+  onExit(listener: (event: ExitEvent) => void): Disposable;
+  on?(event: "end", listener: () => void): void;
+}
+
 export interface PtySpawnOptions {
   name: string;
+  encoding: null;
   cols: number;
   rows: number;
   cwd: string;
@@ -28,7 +41,7 @@ export interface PtySpawnOptions {
 }
 
 export interface Pty {
-  spawn(file: string, args: string[], options: PtySpawnOptions): PtyProcess;
+  spawn(file: string, args: string[], options: PtySpawnOptions): RawPtyProcess;
 }
 
 const importPty = (): Promise<Pty> => import("@lydell/node-pty");

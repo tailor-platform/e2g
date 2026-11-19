@@ -1,5 +1,5 @@
 import { aliased, type Alias } from "./alias.js";
-import { drained, type DrainedProcess } from "./drain.js";
+import { drained } from "./drain.js";
 import { buildEnv } from "./env.js";
 import { loadPty, type PtyProcess } from "./pty.js";
 import { createTerminal } from "./render.js";
@@ -33,7 +33,7 @@ const DEFAULT_IDLE = 100;
 
 export class Terminal {
   readonly options: TerminalOptions;
-  private readonly running = new Set<DrainedProcess>();
+  private readonly running = new Set<PtyProcess>();
   private readonly sessions = new Set<Session>();
   private disposed = false;
 
@@ -76,16 +76,13 @@ export class Terminal {
 
   async dispose(): Promise<void> {
     this.disposed = true;
-    for (const proc of this.running) {
-      proc.kill();
-      proc.flush();
-    }
+    for (const proc of this.running) proc.kill();
     this.running.clear();
     for (const session of this.sessions) session.dispose();
     this.sessions.clear();
   }
 
-  private async start(command: string): Promise<{ proc: DrainedProcess; stream: PtyProcess }> {
+  private async start(command: string): Promise<{ proc: PtyProcess; stream: PtyProcess }> {
     if (this.disposed) throw new Error("terminal is disposed");
     const pty = await loadPty();
     if (this.disposed) throw new Error("terminal is disposed");
@@ -93,6 +90,7 @@ export class Terminal {
     const rows = this.options.rows ?? DEFAULT_ROWS;
     const raw = pty.spawn("/bin/sh", ["-c", command], {
       name: "xterm-256color",
+      encoding: null,
       cols,
       rows,
       cwd: this.options.cwd ?? process.cwd(),

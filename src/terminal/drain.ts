@@ -1,56 +1,47 @@
-import type { ExitEvent, PtyProcess } from "./pty.js";
+import { readSync } from "node:fs";
+import { StringDecoder } from "node:string_decoder";
+import type { ExitEvent, PtyProcess, RawPtyProcess } from "./pty.js";
 
-const QUIET_MS = 50;
-const MAX_WAIT_MS = 1_000;
+const READ_SIZE = 64 * 1024;
 
-export interface DrainedProcess extends PtyProcess {
-  // delivers exit as soon as it is reported, without waiting out the quiet window
-  flush(): void;
-}
-
-// node-pty can report exit before the last output is read from the pty (seen on Linux),
-// so exit is held back until the output has gone quiet
-export function drained(
-  proc: PtyProcess,
-  { quiet = QUIET_MS, max = MAX_WAIT_MS }: { quiet?: number; max?: number } = {},
-): DrainedProcess {
+// When the slave side hangs up, libuv ends the master's read stream after one partial read
+// (on Linux, where a pty read returns at most 4 KiB), dropping whatever the child wrote before
+// exiting that was not read yet. That rest stays readable on the master until it returns EIO,
+// so it is read here, before node-pty closes the master and reports exit.
+export function drained(raw: RawPtyProcess): PtyProcess {
+  const decoder = new StringDecoder("utf8");
   const dataListeners = new Set<(data: string) => void>();
   const exitListeners = new Set<(event: ExitEvent) => void>();
-  let lastData = Date.now();
-  let exited: { event: ExitEvent; at: number } | undefined;
-  let done = false;
-  let flushing = false;
-  let timer: NodeJS.Timeout | undefined;
-  const finish = () => {
-    if (done || !exited) return;
-    done = true;
-    clearTimeout(timer);
-    for (const listener of exitListeners) listener(exited.event);
+  let exited = false;
+  const emit = (text: string) => {
+    if (text && !exited) for (const listener of dataListeners) listener(text);
   };
-  const check = () => {
-    const now = Date.now();
-    const remaining = Math.min(quiet - (now - lastData), max - (now - exited!.at));
-    if (flushing || remaining <= 0) return finish();
-    timer = setTimeout(check, remaining);
-  };
-  proc.onData((data) => {
-    if (done) return;
-    lastData = Date.now();
-    for (const listener of dataListeners) listener(data);
+  raw.onData((data) => emit(typeof data === "string" ? data : decoder.write(data)));
+  raw.on?.("end", () => {
+    if (raw.fd === undefined) return;
+    const buffer = Buffer.alloc(READ_SIZE);
+    for (;;) {
+      let read: number;
+      try {
+        read = readSync(raw.fd, buffer);
+      } catch {
+        // EIO once drained; EAGAIN if another process still holds the slave open
+        break;
+      }
+      if (read === 0) break;
+      emit(decoder.write(buffer.subarray(0, read)));
+    }
   });
-  proc.onExit((event) => {
-    exited = { event, at: Date.now() };
-    check();
+  raw.onExit((event) => {
+    emit(decoder.end());
+    exited = true;
+    for (const listener of exitListeners) listener(event);
   });
   return {
-    pid: proc.pid,
-    write: (text: string) => proc.write(text),
+    pid: raw.pid,
+    write: (text: string) => raw.write(text),
     kill: (signal?: string) => {
-      if (!exited) proc.kill(signal);
-    },
-    flush: () => {
-      flushing = true;
-      if (exited) finish();
+      if (!exited) raw.kill(signal);
     },
     onData: (listener: (data: string) => void) => {
       dataListeners.add(listener);
