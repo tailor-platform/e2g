@@ -3,12 +3,14 @@
   "version": "0.3.0",
   "description": "Guides generated from your e2e tests",
   "keywords": [
+    "cli",
     "documentation",
     "e2e",
     "guides",
     "playwright",
     "reporter",
-    "screenshots"
+    "screenshots",
+    "terminal"
   ],
   "homepage": "https://github.com/tailor-platform/e2g#readme",
   "bugs": {
@@ -64,7 +66,8 @@
     "test": "vitest run",
     "test:browser": "playwright test",
     "example:tour": "pnpm build && playwright test -c examples/tour",
-    "typecheck": "tsc -p . && tsc -p test/types/one && tsc -p test/types/two && tsc -p test/fixture-project.tsconfig.json && tsc -p test/vitest-fixture-project.tsconfig.json && tsc -p test/readme && tsc -p examples/tour",
+    "example:cli": "pnpm build && vitest run -c examples/cli/vitest.config.ts",
+    "typecheck": "tsc -p . && tsc -p test/types/one && tsc -p test/types/two && tsc -p test/fixture-project.tsconfig.json && tsc -p test/vitest-fixture-project.tsconfig.json && tsc -p test/readme && tsc -p test/readme/cli && tsc -p examples/tour && tsc -p examples/cli",
     "lint": "oxlint --deny-warnings && oxfmt --check",
     "check:pkg": "publint && attw --pack . --profile esm-only",
     "changeset": "changeset",

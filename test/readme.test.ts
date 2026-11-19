@@ -1,4 +1,4 @@
-import { globSync, readFileSync } from "node:fs";
+import { existsSync, globSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
@@ -47,7 +47,9 @@ describe("README", () => {
     const file = /^\/\/ (\S+\.ts)\n/.exec(block)?.[1];
     if (file) {
       it(`shows ${file} as it is in test/readme`, () => {
-        expect(block).toBe(readFileSync(join(root, "test/readme", file), "utf8"));
+        // the CLI guides section's files have a project of their own, since it registers other meta
+        const dir = existsSync(join(root, "test/readme", file)) ? "test/readme" : "test/readme/cli";
+        expect(block).toBe(readFileSync(join(root, dir, file), "utf8"));
       });
       continue;
     }

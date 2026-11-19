@@ -1,0 +1,13 @@
+#!/usr/bin/env node
+const [command, name = "world"] = process.argv.slice(2);
+
+if (command === "--version") {
+  console.log("demo 1.0.0");
+} else if (command === "greet") {
+  console.log(`\x1b[32mHello, ${name}!\x1b[0m`);
+} else if (command === "init") {
+  console.log("Created demo.json");
+} else {
+  console.error(`unknown command: ${command ?? ""}`);
+  process.exit(1);
+}

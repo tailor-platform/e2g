@@ -19,6 +19,7 @@ e2g makes them one artifact:
 - **Screenshots that maintain themselves.** Highlighted, cropped and masked shots are retaken on every docs run, and rewritten only when the screen really changed.
 - **Every locale, checked by the compiler.** One test writes a page per locale, and a missing translation is a type error.
 - **Every screen size in one page.** Run the same test on desktop and mobile, and each screenshot becomes a `<picture>` that shows the one for the reader's screen.
+- **Command-line guides too.** Under Vitest, a guide can run your CLI in a pseudo-terminal and show commands with their output, and the screens of interactive programs. See [CLI guides](#cli-guides).
 - **Free in your normal e2e run.** Without a guide locale the same test runs as a plain test: nothing is attached and no screenshot is taken.
 
 ## How it works
@@ -38,6 +39,7 @@ A guide is an ordinary Playwright test. Mark it with `guidePage()`, and use the 
 - [Features](#features)
 - [Quick start](#quick-start)
 - [Retrofit an existing test](#retrofit-an-existing-test)
+- [CLI guides](#cli-guides)
 - [API](#api)
 - [How writing works](#how-writing-works)
 - [Recipes](#recipes)
@@ -370,18 +372,199 @@ The page has one step, "Open **Danger zone**.", with its screenshot. The `@smoke
 
 With one locale, that is the whole change: titles stay plain strings and your locators keep working, since the guide runs in the language the test was written for. With several locales, every locale project runs the whole test, so locators that match visible text must find it in each language; switch them to test ids or translation keys before adding the second locale.
 
+## CLI guides
+
+The same idea works for command-line tools, under [Vitest](https://vitest.dev) instead of Playwright. A guide test runs your CLI in a pseudo-terminal, `guide.command` records a command with its output, and `guide.screen` records what an interactive program shows. Pages come out in the format you choose, as in the browser guides, and screens are written as SVG files. The Playwright guides do not load any of this.
+
+### Setup
+
+```sh
+npm i -D @tailor-platform/e2g @lydell/node-pty
+```
+
+Vitest 5 or later is a peer dependency. `@lydell/node-pty` is an optional peer, needed only for `terminal.run` and `terminal.spawn`; without it they throw an error that says so. [`renderTerminal`](#render-output-you-already-have) and `guide.command` do not use it.
+
+Register your locales as in [step 2](#2-register-your-locales), then add a guides config. `guideProjects` makes one Vitest project per locale, and `guidesReporter` writes the pages, with the same `output`, `manifest` and `prune` as the [Playwright reporter](#reporter). Screens are written under `shots.dir` as `.svg`, at `<locale>/<slug>/<name>.svg`; `shots.path(page, name, ext)` returns another path, where `ext` is always `"svg"` and `page` has no `blocks`.
+
+```ts
+// vitest.guides.config.ts
+import { defineConfig } from "vitest/config";
+import { guideProjects, guidesReporter } from "@tailor-platform/e2g/vitest/reporter";
+import { output } from "./cli-output";
+
+export default defineConfig({
+  test: {
+    include: ["guides/**/*.test.ts"],
+    projects: guideProjects(["en", "ja"], {
+      terminal: { cols: 80, rows: 12, env: { NO_COLOR: "1" } },
+    }),
+    reporters: [
+      "default",
+      guidesReporter({
+        output,
+        shots: { dir: "docs/assets/guides" },
+        manifest: "docs/.guides.json",
+        prune: true,
+      }),
+    ],
+  },
+});
+```
+
+`terminal` takes `cols`, `rows`, `env`, `path` (directories put first on `PATH`), `replace`, `theme`, `idle` and `aliases`. Pass it per locale, as `{ en: {...}, ja: {...} }`, when they differ. The output is the same kind of object as before, with its types from `@tailor-platform/e2g/vitest/reporter`:
+
+```ts
+// cli-output.ts
+import { blocksToMarkdown } from "@tailor-platform/e2g/markdown";
+import type { GuideOutput } from "@tailor-platform/e2g/vitest/reporter";
+
+export const output: GuideOutput = {
+  path: (page) => `docs/${page.locale}/${page.slug}.md`,
+  render: (page) => `# ${page.meta.title[page.locale]}\n\n${blocksToMarkdown(page.blocks)}`,
+};
+```
+
+Run it with `npx vitest run -c vitest.guides.config.ts`. In a normal Vitest run, without a guide config, the same tests run as plain tests: `guide.command` and `guide.screen` record nothing.
+
+### Write a guide
+
+`test`, `guidePage` and `expect` come from `@tailor-platform/e2g/vitest`. The `terminal` fixture runs commands in a temporary home directory, with a project folder in it as the working directory, and removes both after the test. The home shows as `~` in recorded output.
+
+```ts
+// guides/create-a-project.test.ts
+import { expect, guidePage, test } from "@tailor-platform/e2g/vitest";
+
+const page = guidePage("create-a-project", {
+  title: { en: "Create a project", ja: "プロジェクトを作成する" },
+});
+
+test("create a project", page, async ({ guide, terminal }) => {
+  await guide.step({ en: "Create the project.", ja: "プロジェクトを作成します。" }, async () => {
+    const result = await terminal.run("mycli init demo");
+    expect(result.exitCode).toBe(0);
+    await guide.command(result);
+  });
+  await guide.step({ en: "Pick a template.", ja: "テンプレートを選びます。" }, async () => {
+    const session = await terminal.spawn("mycli new");
+    await session.waitForText("Pick a template");
+    session.press("ArrowDown");
+    await guide.screen("picker", session, {
+      alt: { en: "The template picker", ja: "テンプレートの選択画面" },
+    });
+    session.press("Enter");
+    expect(await session.waitForExit()).toBe(0);
+  });
+});
+```
+
+- `terminal.run(command)` runs it through `/bin/sh -c` and resolves with `{ command, output, exitCode }` once it exits. A non-zero exit does not throw, so check `exitCode` yourself. `output` is raw, as the pseudo-terminal sent it: lines end in `\r\n` and colors are escape codes. Check it with `toContain`, or with the text from [`renderTerminal`](#render-output-you-already-have).
+- `terminal.spawn(command)` returns a session for programs that wait for input: `write(text)`, `press(key)` (`"Enter"`, `"ArrowDown"`, `"Control+C"` and so on), `waitForText(text | RegExp)`, `waitForExit()`, `screen()` for the current text and `settle()`.
+- `guide.command(result)` shows `$ <command>` and the output under the running step. The output is run through a terminal first, so colors, carriage returns and cursor movement come out as the text a reader would have seen.
+- `guide.screen(name, session, { alt })` waits until the screen stops changing, then records it. Pass `idle` to wait longer for a slow program, and `timeout` (5 seconds by default) to give it longer to stop changing; the error then starts with `guide.screen("<name>")`.
+- `guide.locale` is the locale of this run, and `undefined` in a plain test run, for a command that takes the reader's language.
+
+Like `guide.shot`, `guide.command` and `guide.screen` must be called inside a `guide.step`. `blocksToMarkdown` renders a command as a `console` block and a screen as an image; `{ screen: "text" }` makes it a `text` block instead.
+
+```ts
+const result = await terminal.run("mycli status");
+expect(result.output).toContain("ready");
+```
+
+```ts
+await guide.command(await terminal.run(`mycli init demo --lang ${guide.locale ?? "en"}`));
+```
+
+`test.override({ guideTerminal })` gives the tests of a `describe` their own terminal settings, in place of the config's `terminal`:
+
+```ts
+describe("a wide table", () => {
+  test.override({ guideTerminal: { cols: 120 } });
+```
+
+### Already have your own `test`?
+
+Importing `test` from `@tailor-platform/e2g/vitest` is the simplest way. A project that already extends Vitest's `test` with fixtures of its own adds e2g's with `guideFixtures`. `describe`, `beforeAll` and `expect` can still come from `vitest`.
+
+```ts
+import { test as base } from "vitest";
+import { guideFixtures } from "@tailor-platform/e2g/vitest";
+
+export const test = base.extend({ answer: 42 }).extend(guideFixtures);
+```
+
+### Show the result of your own helper
+
+`guide.command` takes any `{ command, output }`, so a guide can use whatever already runs your CLI. A result from `child_process` works:
+
+```ts
+const { stdout } = await run("mycli", ["--version"]);
+await guide.command({ command: "mycli --version", output: stdout });
+```
+
+So does an in-process run, which needs no pseudo-terminal. Mock what makes the output vary with `vi.mock`, then pass what your entry point returned:
+
+```ts
+vi.mock("node:os", () => ({ hostname: () => "demo-host" }));
+```
+
+```ts
+await guide.command({ command: "mycli whoami", output: await runCli(["whoami"]) });
+```
+
+### Keep output stable
+
+A page is rewritten only when its text changes, so make the output the same on every run.
+
+- **Replace what varies.** `replace` takes `[pattern, replacement]` pairs, with a string or a RegExp as the pattern. Set it for every guide in `terminal`, or for one call with `guide.command(result, { replace })` or `guide.screen(name, session, { alt, replace })`.
+- **Control the environment.** `env` is merged over the defaults (`TERM`, `LANG=en_US.UTF-8`, `TZ=UTC`, `COLUMNS`, `LINES`, `HOME`). Set `NO_COLOR` for plain text, or the variables your CLI reads for its config and API endpoint.
+- **Use the temporary home.** A path under it is shown as `~`, whatever the OS puts in `$TMPDIR`.
+- **Clocks cannot be frozen.** Commands run as real processes. If your CLI supports `SOURCE_DATE_EPOCH`, pass it in `env`; otherwise replace the timestamps.
+
+```ts
+const result = await terminal.run("mycli list");
+await guide.command(result, { replace: [[/\b[0-9a-f]{7}\b/g, "abc1234"]] });
+```
+
+```ts
+await guide.command(await terminal.run("mycli build"));
+```
+
+### `--help` belongs in a reference
+
+A guide shows what a reader types to get something done. The `--help` text lists everything and changes whenever a flag does, so it is better generated into a reference page. Link to that page from the guide instead of embedding the output.
+
+### Render output you already have
+
+`renderTerminal(output, options?)` from `@tailor-platform/e2g/terminal` runs raw terminal output through the same terminal and returns `{ text, svg }`, for documentation tools that get the output some other way. It needs neither Vitest nor a pseudo-terminal. `options` take `cols`, `rows`, `replace`, `theme` and `scrollback`.
+
+```ts
+export const rendered = await renderTerminal("\x1b[32mdone\x1b[0m\r\n", {
+  cols: 60,
+  replace: [["/Users/ada/project", "~/project"]],
+});
+```
+
+### Partial runs
+
+As with the browser guides, a run that may not include every guide writes nothing and deletes nothing, so a filtered or interrupted run cannot overwrite good docs. Under Vitest these are partial runs: a test name or tag filter, a file filter that skips a guide, `.only`, `--project`, `--changed`, `--related`, `--shard`, watch mode, `bail`, and errors outside the tests. The reporter logs a line that says why.
+
+The example in [`examples/cli`](examples/cli) is a runnable setup: `pnpm example:cli`.
+
 ## API
 
 ### Exports
 
-| Import                                     | Exports                                                                                                                                                                                                                                       |
-| ------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `@tailor-platform/e2g`                     | types only: `Register`, `Locale`, `Variant`, `Meta`, `Text`, `Page`, `PageInfo`, `Block`, `Shot`, `ShotImage`, `Region`, `SourceLocation`, `GuideOutput`                                                                                      |
-| `@tailor-platform/e2g/markdown`            | `blocksToMarkdown`; type `MarkdownOptions`                                                                                                                                                                                                    |
-| `@tailor-platform/e2g/playwright`          | `guideTest`, `test` (the same object), `expect` (Playwright's), `guidePage`; types `Guide`, `GuideStepDetails`, `GuideOptions`, `GuideShotSettings`, `ShotOptions`, `Locale`, `Variant`, `Meta`, `Text`, `Page`, `Block`, `Shot`, `ShotImage` |
-| `@tailor-platform/e2g/playwright/reporter` | default `GuidesReporter`; types `GuidesReporterOptions`, `GuideOutput`, `Page`, `PageInfo`                                                                                                                                                    |
+| Import                                     | Exports                                                                                                                                                                                                                                                                                           |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `@tailor-platform/e2g`                     | types only: `Register`, `Locale`, `Variant`, `Meta`, `Text`, `Page`, `PageInfo`, `Block`, `Item`, `CommandItem`, `ScreenItem`, `ScreenImage`, `Shot`, `ShotImage`, `Region`, `SourceLocation`, `GuideOutput`                                                                                      |
+| `@tailor-platform/e2g/markdown`            | `blocksToMarkdown`; type `MarkdownOptions`                                                                                                                                                                                                                                                        |
+| `@tailor-platform/e2g/playwright`          | `guideTest`, `test` (the same object), `expect` (Playwright's), `guidePage`; types `Guide`, `GuideStepDetails`, `GuideOptions`, `GuideShotSettings`, `ShotOptions`, `Locale`, `Variant`, `Meta`, `Text`, `Page`, `Block`, `Item`, `CommandItem`, `ScreenItem`, `ScreenImage`, `Shot`, `ShotImage` |
+| `@tailor-platform/e2g/playwright/reporter` | default `GuidesReporter`; types `GuidesReporterOptions`, `GuideOutput`, `Page`, `PageInfo`                                                                                                                                                                                                        |
+| `@tailor-platform/e2g/terminal`            | `renderTerminal`, `Terminal`, `DEFAULT_THEME`; types `Session`, `RenderOptions`, `Rendered`, `Replacement`, `Alias`, `TerminalOptions`, `TerminalTheme`, `Palette`, `RunResult`                                                                                                                   |
+| `@tailor-platform/e2g/vitest`              | `guideTest`, `test` (the same object), `guideFixtures`, `expect`, `guidePage`; types `Guide`, `GuideFixtures`, `GuideFixtureDefinitions`, `CommandOptions`, `CommandResult`, `ScreenOptions`, and the page types                                                                                  |
+| `@tailor-platform/e2g/vitest/reporter`     | `guideProjects`, `guidesReporter`; types `GuideProjectsOptions`, `GuidesReporterOptions`, `GuideOutput`, `Page`, `PageInfo`                                                                                                                                                                       |
 
-The root and `@tailor-platform/e2g/markdown` do not load Playwright. `@playwright/test` is an optional peer dependency, needed only for `@tailor-platform/e2g/playwright`. `Register` is augmented on `@tailor-platform/e2g` itself.
+The root and `@tailor-platform/e2g/markdown` do not load Playwright. `@playwright/test` is an optional peer dependency, needed only for the `playwright` entries, and `vitest` for the `vitest` entries. `@lydell/node-pty` is optional too, needed only for `terminal.run` and `terminal.spawn`. `Register` is augmented on `@tailor-platform/e2g` itself.
 
 ### `Register`
 
@@ -410,6 +593,8 @@ Returns `TestDetails` for `test(title, details, body)`. It keeps your `details`,
 A page is one slug in one locale. It may be built from several tests in the same spec file; their steps are joined in source order, and their `meta` must be equal.
 
 ### The `guide` fixture
+
+Under Vitest, `guide` also has `command` and `screen`; see [CLI guides](#cli-guides).
 
 ```ts
 interface Guide {
@@ -543,14 +728,14 @@ A context you create yourself with `browser.newContext()` is not frozen. To shoo
 reporter: [["list"], ["@tailor-platform/e2g/playwright/reporter", guides]],
 ```
 
-| Option       | Type                                           | Default                                                                                                          | Meaning                                                                                                                                  |
-| ------------ | ---------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| `output`     | `GuideOutput`                                  | required                                                                                                         | Where pages go and how they are rendered.                                                                                                |
-| `shots.dir`  | `string`                                       | required                                                                                                         | Directory for screenshots.                                                                                                               |
-| `shots.path` | `(page, name, variant) => string`              | `<shots.dir>/<locale>/<slug>/<name>.png`, with `<variant>/` before `<name>` when the projects set `guideVariant` | Path of one screenshot. `page` has no `blocks`. Give each variant its own path, or the run fails.                                        |
-| `shots.same` | `((a: Buffer, b: Buffer) => boolean) \| false` | built-in comparison                                                                                              | Whether a new PNG shows the same screen as the file on disk, in which case the file is kept. `false` rewrites whenever the bytes differ. |
-| `manifest`   | `string`                                       | required                                                                                                         | JSON file listing every file the reporter wrote. Commit it.                                                                              |
-| `prune`      | `boolean`                                      | `false`                                                                                                          | Delete pages and shots that are in the manifest but were not produced by this run.                                                       |
+| Option       | Type                                           | Default                                                                                                            | Meaning                                                                                                                                               |
+| ------------ | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `output`     | `GuideOutput`                                  | required                                                                                                           | Where pages go and how they are rendered.                                                                                                             |
+| `shots.dir`  | `string`                                       | required                                                                                                           | Directory for screenshots.                                                                                                                            |
+| `shots.path` | `(page, name, variant, ext) => string`         | `<shots.dir>/<locale>/<slug>/<name>.<ext>`, with `<variant>/` before `<name>` when the projects set `guideVariant` | Path of one screenshot. `ext` is `"png"`, or `"svg"` for a terminal screen. `page` has no `blocks`. Give each variant its own path, or the run fails. |
+| `shots.same` | `((a: Buffer, b: Buffer) => boolean) \| false` | built-in comparison                                                                                                | Whether a new PNG shows the same screen as the file on disk, in which case the file is kept. `false` rewrites whenever the bytes differ.              |
+| `manifest`   | `string`                                       | required                                                                                                           | JSON file listing every file the reporter wrote. Commit it.                                                                                           |
+| `prune`      | `boolean`                                      | `false`                                                                                                            | Delete pages and shots that are in the manifest but were not produced by this run.                                                                    |
 
 Relative paths in the options and those returned by `output.path` and `shots.path` are resolved from the directory of the Playwright config file.
 
@@ -595,9 +780,31 @@ interface Page<M = Meta> {
 ```
 
 ```ts
-type Block<S = Shot> =
+type Block<S = Shot, I = ScreenImage> =
   | { kind: "say"; text: string; location?: SourceLocation }
-  | { kind: "step"; text: string; shots: S[]; location?: SourceLocation };
+  | { kind: "step"; text: string; items: Item<S, I>[]; location?: SourceLocation };
+
+type ShotItem<S = Shot> = { kind: "shot" } & S;
+
+type Item<S = Shot, I = ScreenImage> = ShotItem<S> | CommandItem | ScreenItem<I>;
+
+interface CommandItem {
+  kind: "command";
+  command: string;
+  output: string;
+}
+
+interface ScreenItem<I = ScreenImage> {
+  kind: "screen";
+  name: string;
+  alt: string;
+  text: string;
+  image: I;
+}
+
+interface ScreenImage {
+  src: string;
+}
 ```
 
 ```ts
@@ -650,12 +857,14 @@ interface Region {
 
 Renders blocks as CommonMark: each `step` becomes a numbered list item with its images indented under it in order, and each `say` a paragraph. Numbering continues across a `say` unless its first line starts with `#`, which restarts it at 1. Text is inserted as is, so inline Markdown works. Returns `""` for no blocks, otherwise text ending in a newline.
 
-A shot with one image becomes `![alt](src)`. A shot with an image per variant becomes an HTML `<picture>`: `options.media` gives the media query of each variant that is a `<source>`, in the images' order, and the one variant without a media query is the `<img>`, shown where no query matches. It throws unless exactly one variant has no media query.
+A `command` becomes a `console` code block, `$ <command>` followed by its output, indented under the step. A `screen` becomes `![alt](src)`, or with `screen: "text"` a `text` code block of what it showed. A shot with one image becomes `![alt](src)`. A shot with an image per variant becomes an HTML `<picture>`: `options.media` gives the media query of each variant that is a `<source>`, in the images' order, and the one variant without a media query is the `<img>`, shown where no query matches. It throws unless exactly one variant has no media query.
 
 ```ts
 interface MarkdownOptions {
   /** The media query of each variant a `<source>` is for; the one variant left out is the `<img>`. */
   media?: Partial<Record<Variant, string>>;
+  /** How a terminal screen appears: as its image (default) or as a `text` block of what it showed. */
+  screen?: "image" | "text";
 }
 ```
 
@@ -824,7 +1033,7 @@ const tour: GuideOutput = {
   path: (page) => `site/tours/${page.locale}/${page.slug}.json`,
   render: (page) => {
     const steps = page.blocks.flatMap((block) =>
-      block.kind === "step" ? [{ text: block.text, shots: block.shots }] : [],
+      block.kind === "step" ? [{ text: block.text, items: block.items }] : [],
     );
     return `${JSON.stringify({ title: page.meta.title[page.locale], steps }, null, 2)}\n`;
   },
