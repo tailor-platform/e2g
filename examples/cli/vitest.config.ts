@@ -10,7 +10,8 @@ export default defineConfig({
     include: ["guides/**/*.test.ts"],
     // the CLI is found on PATH, as it would be once installed
     projects: guideProjects(["en", "ja"], {
-      terminal: { path: [fileURLToPath(new URL("bin", import.meta.url))] },
+      // a short screen keeps captures of small prompts compact
+      terminal: { path: [fileURLToPath(new URL("bin", import.meta.url))], rows: 8 },
     }),
     reporters: [
       "default",
