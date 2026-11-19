@@ -24,16 +24,19 @@ export function readFile(path: string): Buffer | null {
 const strings = (value: unknown): value is string[] =>
   Array.isArray(value) && value.every((v) => typeof v === "string");
 
-/** `null` when the file exists but is not a version 1 manifest, so it must be left as it is. */
-export function readManifest(path: string): Manifest | null {
-  const data = readFile(path);
-  if (!data) return EMPTY_MANIFEST;
+export function parseManifest(data: Buffer): Manifest | null {
   try {
     const m = JSON.parse(data.toString("utf8")) as Partial<Manifest> | null;
     if (m?.schemaVersion === 1 && strings(m.pages) && strings(m.shots))
       return { schemaVersion: 1, pages: m.pages, shots: m.shots };
   } catch {}
   return null;
+}
+
+/** `null` when the file exists but is not a version 1 manifest, so it must be left as it is. */
+export function readManifest(path: string): Manifest | null {
+  const data = readFile(path);
+  return data ? parseManifest(data) : EMPTY_MANIFEST;
 }
 
 // a crash mid-write leaves the old file or the new one, never half of either

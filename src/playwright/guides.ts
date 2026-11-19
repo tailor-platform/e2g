@@ -8,7 +8,8 @@ import {
   type TestInfo,
   type TestStepInfo,
 } from "@playwright/test";
-import { callerLocation } from "./location.js";
+import { callerLocation } from "../core/location.js";
+import { checkName, dedent, resolve, textsOf } from "../core/text.js";
 import { captureShot, type ShotOptions } from "./shot.js";
 import { ANNOTATION, PNG_PREFIX, SAY, SHOT, STEP, TAG } from "./protocol.js";
 import type { Locale, Meta, Text } from "../types.js";
@@ -48,29 +49,6 @@ export function guidePage(slug: string, meta: Meta, details: TestDetails = {}): 
       { type: ANNOTATION, description: JSON.stringify({ slug, meta }) },
     ],
   };
-}
-
-const textsOf = (text: Text): string[] =>
-  typeof text === "string" ? [text] : Object.values(text as Record<string, string>);
-
-// a run without guideLocale is a normal e2e run, where a text is only shown in reports: its first locale is used
-function resolve(fn: string, text: Text, locale: string | undefined): string {
-  if (typeof text === "string") return text;
-  const texts = text as Record<string, string | undefined>;
-  const found = locale === undefined ? Object.values(texts)[0] : texts[locale];
-  if (typeof found !== "string")
-    throw new Error(locale === undefined ? `${fn} has no text` : `${fn} has no "${locale}" text`);
-  return found;
-}
-
-function dedent(text: string): string {
-  const lines = text.split("\n");
-  while (lines.length > 0 && !lines[0]!.trim()) lines.shift();
-  while (lines.length > 0 && !lines.at(-1)!.trim()) lines.pop();
-  const indent = Math.min(
-    ...lines.filter((line) => line.trim()).map((line) => /^\s*/.exec(line)![0].length),
-  );
-  return lines.map((line) => line.slice(indent)).join("\n");
 }
 
 const located = (location: Location | undefined) => (location ? { location } : {});
@@ -149,8 +127,7 @@ function createGuide({ info, page, locale, shots, shotSettings }: GuideContext):
       if (!current || current.info !== info)
         throw new Error("guide.shot() must be called inside guide.step()");
       if (current.done) throw new Error("guide.shot() was called after its guide.step() finished");
-      if (!/^[\w.-]+$/.test(name) || name.includes(".."))
-        throw new Error(`shot name "${name}" may contain only letters, digits, ".", "_" and "-"`);
+      checkName("shot", name);
       if (names.has(name)) throw new Error(`shot "${name}" is already taken`);
       const alt = resolve("guide.shot() alt", opts.alt, locale);
       if (!inGuideRun) {

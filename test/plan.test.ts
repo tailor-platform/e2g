@@ -15,7 +15,14 @@ function page(slug: string, shots: string[] = ["menu"], locale = "en"): Collecte
     blocks: shots.map((name) => ({
       kind: "step",
       text: name,
-      shots: [{ name, alt: name, images: [{ regions: [], png: png(`${slug}-${name}`) }] }],
+      items: [
+        {
+          kind: "shot",
+          name,
+          alt: name,
+          images: [{ regions: [], png: png(`${slug}-${name}`) }],
+        },
+      ],
     })),
   };
 }
@@ -25,7 +32,9 @@ const output: GuideOutput<unknown> = {
   render: (p) =>
     p.blocks
       .map((b) =>
-        b.kind === "step" ? b.shots.flatMap((s) => s.images.map((i) => i.src)).join("\n") : b.text,
+        b.kind === "step"
+          ? b.items.flatMap((s) => (s.kind === "shot" ? s.images : []).map((i) => i.src)).join("\n")
+          : b.text,
       )
       .join("\n"),
 };
@@ -40,8 +49,9 @@ function input(over: Partial<PlanInput> = {}): PlanInput {
     incomplete: [],
     errors: [],
     output,
-    shotPath: (p: PageInfo<unknown>, name: string, variant?: string) =>
-      `/site/assets/${p.locale}/${p.slug}/${variant ? `${variant}/` : ""}${name}.png`,
+    shotPath: (p: PageInfo<unknown>, name: string, variant: string | undefined, ext = "png") =>
+      `/site/assets/${p.locale}/${p.slug}/${variant ? `${variant}/` : ""}${name}.${ext}`,
+    foreign: new Set(),
     manifestDir: "/site/docs",
     manifest: empty,
     current: () => null,
@@ -288,8 +298,9 @@ describe("plan", () => {
         {
           kind: "step",
           text: "menu",
-          shots: [
+          items: [
             {
+              kind: "shot",
               name: "menu",
               alt: "menu",
               images: [{ src: "../../assets/en/intro/menu.png", regions: [] }],
@@ -308,8 +319,9 @@ describe("plan", () => {
         {
           kind: "step",
           text: "Open",
-          shots: [
+          items: [
             {
+              kind: "shot",
               name: "menu",
               alt: "Menu",
               images: [
@@ -338,8 +350,9 @@ describe("plan", () => {
       { op: "write", path: "/site/assets/en/intro/mobile/menu.png", data: png("m") },
     ]);
     expect(seen[0]!.blocks[0]).toMatchObject({
-      shots: [
+      items: [
         {
+          kind: "shot",
           images: [
             { variant: "desktop", src: "../../assets/en/intro/desktop/menu.png", regions: [] },
             { variant: "mobile", src: "../../assets/en/intro/mobile/menu.png", regions: [region] },
@@ -371,8 +384,9 @@ describe("plan", () => {
         {
           kind: "step",
           text: "Open",
-          shots: [
+          items: [
             {
+              kind: "shot",
               name: "menu",
               alt: "Menu",
               images: [
@@ -430,5 +444,97 @@ describe("plan", () => {
       data: "../../assets/en/intro/menu.png",
     });
     expect(deletes(result.ops)).toEqual(["C:\\site\\docs\\en\\gone.md"]);
+  });
+
+  describe("screens", () => {
+    const withScreen = (): CollectedPage => ({
+      ...page("intro", []),
+      blocks: [
+        {
+          kind: "step",
+          text: "Choose",
+          items: [
+            { kind: "command", command: "tool run", output: "ok" },
+            {
+              kind: "screen",
+              name: "choose",
+              alt: "choose",
+              text: "ready",
+              image: { svg: Buffer.from("<svg/>") },
+            },
+          ],
+        },
+      ],
+    });
+    const screenOutput: GuideOutput<unknown> = {
+      ...output,
+      render: (p) => JSON.stringify(p.blocks),
+    };
+
+    it("writes a screen svg next to the page", () => {
+      const result = plan(
+        input({
+          pages: [withScreen()],
+          output: {
+            ...screenOutput,
+            path: (p) => `/site/docs/${p.locale}/${p.slug}/index.md`,
+          },
+          shotPath: (p, name, _v, ext) => `/site/docs/${p.locale}/${p.slug}/${name}.${ext}`,
+        }),
+      );
+      expect(result.errors).toEqual([]);
+      expect(writes(result.ops)).toContain("/site/docs/en/intro/choose.svg");
+      const pageOp = result.ops.find((o) => o.op === "write" && o.path.endsWith("index.md"));
+      expect(pageOp).toMatchObject({
+        data: expect.stringContaining('"image":{"src":"choose.svg"}'),
+      });
+      expect(result.manifest?.shots).toEqual(["en/intro/choose.svg"]);
+    });
+
+    it("keeps an svg whose bytes match", () => {
+      const calls: string[] = [];
+      const result = plan(
+        input({
+          pages: [withScreen()],
+          output: screenOutput,
+          current: (path) => (path.endsWith(".svg") ? Buffer.from("<svg/>") : null),
+          same: (...args) => {
+            calls.push(String(args.length));
+            return true;
+          },
+        }),
+      );
+      expect(writes(result.ops).some((path) => path.endsWith(".svg"))).toBe(false);
+      expect(calls).toEqual([]);
+    });
+
+    it("rewrites an svg whose bytes differ without asking same", () => {
+      const result = plan(
+        input({
+          pages: [withScreen()],
+          output: screenOutput,
+          current: (path) => (path.endsWith(".svg") ? Buffer.from("<svg>old</svg>") : null),
+          same: () => {
+            throw new Error("same is for PNGs");
+          },
+        }),
+      );
+      expect(writes(result.ops).some((path) => path.endsWith(".svg"))).toBe(true);
+    });
+
+    it("refuses a path another manifest owns", () => {
+      const result = plan(
+        input({
+          pages: [withScreen()],
+          output: screenOutput,
+          shotPath: (_p, _n, _v, ext) => `/abs/x.${ext}`,
+          foreign: new Set(["/abs/x.svg"]),
+        }),
+      );
+      expect(result.ops).toEqual([]);
+      expect(result.errors).toEqual([
+        "wrote no guide pages because page intro/en writes /abs/x.svg, which another manifest owns",
+      ]);
+    });
   });
 });

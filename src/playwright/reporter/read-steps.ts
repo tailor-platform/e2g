@@ -1,11 +1,11 @@
 import type { TestStep } from "@playwright/test/reporter";
-import type { Block, Region, TakenShot } from "../../types.js";
+import type { Block, Item, Region, TakenShot } from "../../types.js";
 import { readFile } from "../../core/io.js";
 import { real } from "../../core/real.js";
 import { PNG_PREFIX, SAY, SHOT, STEP } from "../protocol.js";
 
 export interface ReadSteps {
-  blocks: Block<TakenShot>[];
+  blocks: Block<TakenShot, null>[];
   shots: Map<string, Buffer>;
   /** Why a guide attachment could not be used; the test's page is then incomplete. */
   problem?: string;
@@ -66,18 +66,18 @@ export function readSteps(steps: readonly TestStep[]): ReadSteps {
       const attachments = step.category === "test.step" ? step.attachments : [];
       const say = attachments.find((a) => a.name === SAY);
       if (attachments.some((a) => a.name === STEP)) {
-        const shots: TakenShot[] = [];
+        const items: Item<TakenShot, null>[] = [];
         for (const attachment of attachments) {
           if (attachment.name === SHOT) {
             const shot = shotOf(attachment);
-            if (shot) shots.push(shot);
+            if (shot) items.push({ kind: "shot", ...shot });
             else fail("a shot attachment could not be read");
           } else if (attachment.name.startsWith(PNG_PREFIX)) {
             const data = body(attachment);
             if (data) read.shots.set(attachment.name.slice(PNG_PREFIX.length), data);
           }
         }
-        read.blocks.push({ kind: "step", text: step.title, shots, ...locatedAt(step) });
+        read.blocks.push({ kind: "step", text: step.title, items, ...locatedAt(step) });
       } else if (say) {
         const data = body(say);
         if (data)

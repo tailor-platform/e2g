@@ -6,7 +6,7 @@ import {
   type ExpectedTest,
   type TestOutcome,
 } from "../src/core/collect.js";
-import type { Block, GuideRecord, TakenShot } from "../src/types.js";
+import { isShot, type Block, type GuideRecord, type TakenShot } from "../src/types.js";
 
 const ROOT = "/repo";
 const png = (s: string) => Buffer.from(s);
@@ -26,7 +26,7 @@ function test_(id: string, over: Partial<ExpectedTest> = {}): ExpectedTest {
 }
 
 function passed(
-  blocks: Block<TakenShot>[],
+  blocks: Block<TakenShot, null>[],
   opts: { meta?: unknown; shots?: string[] } = {},
 ): TestOutcome {
   const record: GuideRecord<unknown> = {
@@ -37,15 +37,28 @@ function passed(
     blocks,
   };
   const names =
-    opts.shots ?? blocks.flatMap((b) => (b.kind === "step" ? b.shots.map((s) => s.name) : []));
+    opts.shots ??
+    blocks.flatMap((b) =>
+      b.kind === "step"
+        ? b.items.flatMap((s) => (isShot(s) || s.kind === "screen" ? [s.name] : []))
+        : [],
+    );
   return { ok: true, record, shots: new Map(names.map((n) => [n, png(n)])) };
 }
 
-const say = (text: string): Block<TakenShot> => ({ kind: "say", text });
-const step = (text: string, name?: string): Block<TakenShot> => ({
+const say = (text: string): Block<TakenShot, null> => ({ kind: "say", text });
+const screen = (name: string, text = "ready"): Block<TakenShot, null> => ({
+  kind: "step",
+  text: name,
+  items: [
+    { kind: "command", command: "tool run", output: "ok" },
+    { kind: "screen", name, alt: name, text, image: null },
+  ],
+});
+const step = (text: string, name?: string): Block<TakenShot, null> => ({
   kind: "step",
   text,
-  shots: name ? [{ name, alt: name, regions: [] }] : [],
+  items: name ? [{ kind: "shot", name, alt: name, regions: [] }] : [],
 });
 
 describe("collectPages", () => {
@@ -125,6 +138,97 @@ describe("collectPages", () => {
     expect(errors[0]).toContain("menu");
   });
 
+  it("screen and shot names share one namespace", () => {
+    const expected = [test_("a", { line: 1 }), test_("b", { line: 5 })];
+    const results = new Map([
+      ["a", passed([step("Open", "x")])],
+      ["b", passed([screen("x")])],
+    ]);
+    const { errors } = collectPages(expected, results, ROOT);
+    expect(errors).toEqual(["page intro/en uses the shot name x more than once"]);
+  });
+
+  it("carries a screen's svg and a command through", () => {
+    const results = new Map([["a", passed([screen("choose")])]]);
+    const { pages, errors } = collectPages([test_("a")], results, ROOT);
+    expect(errors).toEqual([]);
+    expect(pages[0]!.blocks[0]).toEqual({
+      kind: "step",
+      text: "choose",
+      items: [
+        { kind: "command", command: "tool run", output: "ok" },
+        {
+          kind: "screen",
+          name: "choose",
+          alt: "choose",
+          text: "ready",
+          image: { svg: png("choose") },
+        },
+      ],
+    });
+  });
+
+  it("a screen without its svg leaves the page incomplete", () => {
+    const outcome = passed([screen("choose")], { shots: [] });
+    const { pages, incomplete } = collectPages([test_("a")], new Map([["a", outcome]]), ROOT);
+    expect(pages).toEqual([]);
+    expect(incomplete).toHaveLength(1);
+    expect(incomplete).toEqual(["intro/en (a screen has no SVG attachment)"]);
+  });
+
+  it("variants must agree on command and screen text", () => {
+    const variants = ["a", "b"];
+    const expected = [
+      test_("a", { variant: "a", variants }),
+      test_("b", { variant: "b", variants }),
+    ];
+    const withOutput = (output: string): Block<TakenShot, null> => ({
+      kind: "step",
+      text: "Run",
+      items: [{ kind: "command", command: "tool run", output }],
+    });
+    const message = "page intro/en has different steps, paragraphs or shots in variants a and b";
+    const output = collectPages(
+      expected,
+      new Map([
+        ["a", passed([withOutput("one")])],
+        ["b", passed([withOutput("two")])],
+      ]),
+      ROOT,
+    );
+    expect(output.errors).toEqual([message]);
+    const text = collectPages(
+      expected,
+      new Map([
+        ["a", passed([screen("choose", "one")])],
+        ["b", passed([screen("choose", "two")])],
+      ]),
+      ROOT,
+    );
+    expect(text.errors).toEqual([message]);
+    const svg = passed([screen("choose")]);
+    svg.shots.set("choose", png("other"));
+    const bytes = collectPages(
+      expected,
+      new Map([
+        ["a", passed([screen("choose")])],
+        ["b", svg],
+      ]),
+      ROOT,
+    );
+    expect(bytes.errors).toEqual([message]);
+    const same = collectPages(
+      expected,
+      new Map([
+        ["a", passed([screen("choose")])],
+        ["b", passed([screen("choose")])],
+      ]),
+      ROOT,
+    );
+    expect(same.errors).toEqual([]);
+    expect(same.pages).toHaveLength(1);
+  });
+
   it("several spec files is an error", () => {
     const expected = [
       test_("a", { file: "/repo/e2e/one.spec.ts" }),
@@ -164,7 +268,7 @@ describe("collectPages", () => {
     const results = new Map([["a", passed([step("Open", "menu")])]]);
     results.get("a")!.shots.set("menu", png("retry"));
     const { pages } = collectPages([test_("a")], results, ROOT);
-    const [shot] = (pages[0]!.blocks[0] as { shots: CollectedShot[] }).shots;
+    const [shot] = (pages[0]!.blocks[0] as { items: CollectedShot[] }).items;
     expect(shot!.images[0]!.png).toEqual(png("retry"));
   });
 
@@ -224,12 +328,15 @@ describe("collectPages", () => {
     const in_ = (variant: string, id = variant, over: Partial<ExpectedTest> = {}) =>
       test_(id, { variant, variants, ...over });
     const region = (x: number) => ({ x, y: 0, width: 0.1, height: 0.1 });
-    function taken(variant: string, blocks: Block<TakenShot>[], x = 0): TestOutcome {
+    function taken(variant: string, blocks: Block<TakenShot, null>[], x = 0): TestOutcome {
       const outcome = passed(blocks);
       for (const name of outcome.shots.keys()) outcome.shots.set(name, png(`${variant}-${name}`));
       outcome.record.blocks = blocks.map((b) =>
         b.kind === "step"
-          ? { ...b, shots: b.shots.map((s) => ({ ...s, regions: [region(x)] })) }
+          ? {
+              ...b,
+              items: b.items.map((s) => (isShot(s) ? { ...s, regions: [region(x)] } : s)),
+            }
           : b,
       );
       return outcome;
@@ -250,8 +357,9 @@ describe("collectPages", () => {
         {
           kind: "step",
           text: "Open",
-          shots: [
+          items: [
             {
+              kind: "shot",
               name: "menu",
               alt: "menu",
               images: [
@@ -267,7 +375,7 @@ describe("collectPages", () => {
     it("a page without variants has one image without a variant", () => {
       const results = new Map([["a", passed([step("Open", "menu")])]]);
       const { pages } = collectPages([test_("a")], results, ROOT);
-      const [shot] = (pages[0]!.blocks[0] as { shots: CollectedShot[] }).shots;
+      const [shot] = (pages[0]!.blocks[0] as { items: CollectedShot[] }).items;
       expect(shot!.images).toEqual([{ regions: [], png: png("menu") }]);
     });
 

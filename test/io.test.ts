@@ -11,6 +11,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { apply, commit, readFile, readManifest, writeManifest } from "../src/core/io.js";
+import { foreignPaths } from "../src/core/manifests.js";
 
 let dir: string;
 beforeEach(() => {
@@ -149,5 +150,28 @@ describe("io", () => {
     });
     expect(readFileSync(join(docs, ".guides.json"), "utf8")).toBe("{");
     expect(readFileSync(join(docs, "en/intro.md"), "utf8")).toBe("page");
+  });
+});
+
+describe("foreignPaths", () => {
+  it("lists what the other parseable manifests in the directory own", () => {
+    const docs = join(dir, "docs");
+    mkdirSync(docs);
+    writeManifest(join(docs, ".e2g.json"), { schemaVersion: 1, pages: ["en/own.md"], shots: [] });
+    writeManifest(join(docs, ".guides.json"), {
+      schemaVersion: 1,
+      pages: ["en/other.md"],
+      shots: ["../assets/en/other/a.png"],
+    });
+    writeFileSync(join(docs, "broken.json"), "{ not json");
+    const manifestLike = JSON.stringify({ schemaVersion: 1, pages: ["x.md"], shots: [] });
+    writeFileSync(join(docs, "page.md"), manifestLike);
+    expect(foreignPaths(join(docs, ".e2g.json"))).toEqual(
+      new Set([join(docs, "en/other.md"), join(dir, "assets/en/other/a.png")]),
+    );
+  });
+
+  it("is empty when the directory does not exist", () => {
+    expect(foreignPaths(join(dir, "missing/.e2g.json"))).toEqual(new Set());
   });
 });

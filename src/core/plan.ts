@@ -1,5 +1,12 @@
-import type { Block, Shot, ShotImage } from "../types.js";
-import type { CollectedPage, CollectedShot } from "./collect.js";
+import {
+  isShot,
+  type Block,
+  type Item,
+  type ShotImage,
+  type ShotItem,
+  type Shot,
+} from "../types.js";
+import type { CollectedPage, CollectedShot, CollectedSvg } from "./collect.js";
 import { directoryOf, relativePath, resolvePath } from "./paths.js";
 import type { GuideOutput, Manifest, Op, PageInfo, RunScope } from "./types.js";
 
@@ -10,7 +17,14 @@ export interface PlanInput {
   incomplete: string[];
   errors: string[];
   output: GuideOutput<unknown>;
-  shotPath(page: PageInfo<unknown>, name: string, variant: string | undefined): string;
+  shotPath(
+    page: PageInfo<unknown>,
+    name: string,
+    variant: string | undefined,
+    ext: "png" | "svg",
+  ): string;
+  /** Absolute paths other manifests own, which this one must not write. */
+  foreign: Set<string>;
   manifestDir: string;
   manifest: Manifest;
   current(path: string): Buffer | null;
@@ -48,18 +62,26 @@ function targetsOf({ blocks, ...info }: CollectedPage, input: PlanInput): Target
   const path = input.output.path(info);
   const dir = directoryOf(path);
   const shots: Target[] = [];
-  const place = (shot: CollectedShot): Shot => ({
+  const place = (shot: CollectedShot): ShotItem<Shot> => ({
+    kind: "shot",
     name: shot.name,
     alt: shot.alt,
     images: shot.images.map(({ png, ...image }) => {
-      const at = input.shotPath(info, shot.name, image.variant);
+      const at = input.shotPath(info, shot.name, image.variant, "png");
       shots.push({ owner, path: at, data: png, kind: "shots" });
       // a variant is one the projects set, so one of the registered ones
       return { ...image, src: relativePath(dir, at) } as ShotImage;
     }),
   });
+  const placeItem = (item: Item<CollectedShot, CollectedSvg>): Item => {
+    if (isShot(item)) return place(item);
+    if (item.kind === "command") return item;
+    const at = input.shotPath(info, item.name, undefined, "svg");
+    shots.push({ owner, path: at, data: item.image.svg, kind: "shots" });
+    return { ...item, image: { src: relativePath(dir, at) } };
+  };
   const placed = blocks.map((b): Block =>
-    b.kind === "say" ? b : { ...b, shots: b.shots.map(place) },
+    b.kind === "say" ? b : { ...b, items: b.items.map(placeItem) },
   );
   const page = { ...info, blocks: placed };
   return [{ owner, path, data: input.output.render(page), kind: "pages" }, ...shots];
@@ -81,11 +103,20 @@ function collisions(targets: Target[]): string[] {
   return errors;
 }
 
+function foreignWrites(targets: Target[], foreign: Set<string>): string[] {
+  const owned = new Set([...foreign].map(fileKey));
+  return targets
+    .filter((t) => owned.has(fileKey(t.path)))
+    .map((t) => `page ${t.owner} writes ${t.path}, which another manifest owns`);
+}
+
 function unchanged(target: Target, input: PlanInput): boolean {
   const old = input.current(target.path);
   if (!old) return false;
   if (typeof target.data === "string") return old.toString("utf8") === target.data;
   if (old.equals(target.data)) return true;
+  // sameScreen reads PNGs only; an SVG differs when its bytes do
+  if (target.path.endsWith(".svg")) return false;
   try {
     return input.same(old, target.data);
   } catch {
@@ -133,7 +164,7 @@ export function plan(input: PlanInput): Plan {
   if (input.scope.partial) return nothing(because([input.scope.reason]));
   if (input.errors.length > 0) return nothing([], because(input.errors));
   const targets = input.pages.flatMap((page) => targetsOf(page, input));
-  const clashes = collisions(targets);
+  const clashes = [...collisions(targets), ...foreignWrites(targets, input.foreign)];
   if (clashes.length > 0) return nothing([], because(clashes));
 
   const messages = input.incomplete.map((entry) => `did not write ${entry}`);

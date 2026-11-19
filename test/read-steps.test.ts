@@ -40,7 +40,11 @@ describe("readSteps", () => {
     expect(read).toEqual({
       blocks: [
         { kind: "say", text: "Intro text." },
-        { kind: "step", text: "Click.", shots: [{ name: "01", alt: "One", regions: [] }] },
+        {
+          kind: "step",
+          text: "Click.",
+          items: [{ kind: "shot", name: "01", alt: "One", regions: [] }],
+        },
       ],
       shots: new Map([["01", Buffer.from("png")]]),
     });
@@ -74,7 +78,7 @@ describe("readSteps", () => {
     ]);
     expect(read.blocks).toEqual([
       { kind: "say", text: "Intro text.", location: at(4) },
-      { kind: "step", text: "Click.", shots: [], location: at(7) },
+      { kind: "step", text: "Click.", items: [], location: at(7) },
     ]);
   });
 
@@ -84,7 +88,7 @@ describe("readSteps", () => {
       step("Click.", [mark, attachment(SHOT, JSON.stringify({ name: "01", alt: "One", regions }))]),
     ]);
     expect(read.blocks).toEqual([
-      { kind: "step", text: "Click.", shots: [{ name: "01", alt: "One", regions }] },
+      { kind: "step", text: "Click.", items: [{ kind: "shot", name: "01", alt: "One", regions }] },
     ]);
   });
 
