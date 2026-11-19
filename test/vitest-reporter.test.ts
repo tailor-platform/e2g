@@ -234,7 +234,8 @@ describe.concurrent("guidesReporter on a partial run", { timeout: 180_000 }, () 
     const { dir, before } = await staleProject();
     const file = "guides/create-a-project.test.ts";
     writeFileSync(join(dir, file), read(dir, file).replace("test(", "test.only("));
-    const result = await run(dir, PRUNE);
+    // a local run: Vitest refuses .only on CI unless allowed
+    const result = await run(dir, PRUNE, ["--allowOnly"]);
     ok(result);
     expect(result.stderr).toContain(
       `e2g: wrote no guide pages because ${file} has a .only test or suite`,
