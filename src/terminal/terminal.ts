@@ -17,6 +17,8 @@ export interface TerminalOptions {
   path?: string[];
   home?: string;
   cwd?: string;
+  /** Where the search for `node_modules/.bin` directories starts, upward; the current directory by default. */
+  binFrom?: string;
   // applied to the raw output, before it wraps at `cols`, which would split a long literal and defeat a Replacement
   aliases?: Alias[];
 }

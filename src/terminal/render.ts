@@ -150,11 +150,14 @@ export function snapshot(
   });
   while (groups.length > 0 && groups[groups.length - 1]!.rows.every((r) => paintedWidth(r) === 0))
     groups.pop();
-  const cells = groups.flatMap((group) => {
-    const { row, end } = replaceRow(joinRows(term, group.ys, group.rows), replace, false);
-    return wrapRow(row.slice(0, end), row.slice(end), term.cols);
-  });
-  const text = cells.map((row) => rowText(row.slice(0, contentWidth(row)))).join("\n");
+  // The text keeps each logical line whole so a reader can copy it; only the SVG shows the wrapping.
+  const lines = groups.map((group) =>
+    replaceRow(joinRows(term, group.ys, group.rows), replace, false),
+  );
+  const cells = lines.flatMap(({ row, end }) =>
+    wrapRow(row.slice(0, end), row.slice(end), term.cols),
+  );
+  const text = lines.map(({ row }) => rowText(row.slice(0, contentWidth(row)))).join("\n");
   return { text, svg: bufferToSvg(cells, term.cols, options.theme) };
 }
 

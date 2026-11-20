@@ -7,6 +7,14 @@ export interface EnvOptions {
   env?: Record<string, string | undefined>;
   path?: string[];
   home?: string;
+  binFrom?: string;
+}
+
+// the test runner's own variables would make a CLI behave differently locally and in CI
+const dropped = (key: string) => key === "NODE_ENV" || key === "CI" || key.startsWith("VITEST");
+
+function inherited(): Record<string, string | undefined> {
+  return Object.fromEntries(Object.entries(process.env).filter(([key]) => !dropped(key)));
 }
 
 function binDirs(from: string): string[] {
@@ -22,14 +30,14 @@ function binDirs(from: string): string[] {
 
 export function buildEnv(options: EnvOptions): Record<string, string> {
   const merged: Record<string, string | undefined> = {
-    ...process.env,
+    ...inherited(),
     TERM: "xterm-256color",
     LANG: "en_US.UTF-8",
     TZ: "UTC",
     COLUMNS: String(options.cols),
     LINES: String(options.rows),
     HOME: options.home ?? homedir(),
-    PATH: [...(options.path ?? []), ...binDirs(process.cwd()), process.env.PATH]
+    PATH: [...(options.path ?? []), ...binDirs(options.binFrom ?? process.cwd()), process.env.PATH]
       .filter(Boolean)
       .join(delimiter),
     ...options.env,

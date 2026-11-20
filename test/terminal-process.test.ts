@@ -68,6 +68,43 @@ describe("Terminal.run", () => {
     }
   });
 
+  it("finds node_modules/.bin upward from binFrom, wherever the process runs", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "e2g-pty-"));
+    try {
+      mkdirSync(join(dir, "sub/node_modules/.bin"), { recursive: true });
+      mkdirSync(join(dir, "sub/tests/deep"), { recursive: true });
+      mkdirSync(join(dir, "elsewhere"));
+      writeFileSync(join(dir, "sub/node_modules/.bin/mytool"), "#!/bin/sh\necho from-mytool\n", {
+        mode: 0o755,
+      });
+      const result = await make({
+        binFrom: join(dir, "sub/tests/deep"),
+        cwd: join(dir, "elsewhere"),
+      }).run("mytool");
+      expect(result.exitCode).toBe(0);
+      expect(await text(result.output)).toBe("from-mytool");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("leaves out the test runner's variables unless env sets them", async () => {
+    const saved = { ...process.env };
+    Object.assign(process.env, { NODE_ENV: "test", CI: "true", VITEST_EXTRA: "1" });
+    try {
+      const print =
+        'node -e "console.log(process.env.NODE_ENV, process.env.CI, process.env.VITEST, process.env.VITEST_EXTRA)"';
+      expect(await text((await make().run(print)).output)).toBe(
+        "undefined undefined undefined undefined",
+      );
+      const back = await make({ env: { CI: "1", NODE_ENV: "production" } }).run(print);
+      expect(await text(back.output)).toBe("production 1 undefined undefined");
+    } finally {
+      for (const key of Object.keys(process.env)) if (!(key in saved)) delete process.env[key];
+      Object.assign(process.env, saved);
+    }
+  });
+
   it("keeps all output of a burst", async () => {
     const result = await make().run(
       "node -e \"for (let i = 1; i <= 5000; i++) console.log('line ' + i)\"",

@@ -3,6 +3,11 @@ import { createTerminal, renderTerminal, snapshot } from "../src/terminal/render
 import { replaceRow, rowText } from "../src/terminal/replace.js";
 import type { Cell } from "../src/terminal/svg.js";
 
+const svgRows = (svg: string) => {
+  const height = Number(/height="([\d.]+)"/.exec(svg)![1]);
+  return Math.round((height - 20) / 24);
+};
+
 describe("renderTerminal", () => {
   it("keeps only the final state of carriage-return redraws", async () => {
     expect((await renderTerminal("10%\r55%\r100%\n")).text).toBe("100%");
@@ -30,9 +35,19 @@ describe("renderTerminal", () => {
     term.dispose();
   });
 
-  it("wraps at cols", async () => {
-    const { text } = await renderTerminal("a".repeat(85), { cols: 80 });
-    expect(text.split("\n").map((l) => l.length)).toEqual([80, 5]);
+  it("keeps a line longer than cols whole in text and wraps it in the svg", async () => {
+    const { text, svg } = await renderTerminal("a".repeat(85), { cols: 80 });
+    expect(text).toBe("a".repeat(85));
+    expect(svgRows(svg)).toBe(2);
+  });
+
+  it("keeps a long URL on one line, so it can be copied", async () => {
+    const url = `https://example.com/auth/device?code=${"x".repeat(80)}`;
+    const { text, svg } = await renderTerminal(`Open ${url}\r\nWaiting...\r\n`, { cols: 40 });
+    expect(text).toBe(`Open ${url}\nWaiting...`);
+    expect(svg).not.toContain(url);
+    expect(svg).toContain("Open https://example.com/auth/device?co");
+    expect(svgRows(svg)).toBe(Math.ceil((5 + url.length) / 40) + 1);
   });
 
   it("throws past scrollback", async () => {
@@ -113,23 +128,29 @@ describe("renderTerminal", () => {
       ...opts,
       replace: [["token", "T"]],
     });
-    expect(shorter.text).toBe("aaaaaaaaTb\nbbbbbbbb");
+    expect(shorter.text).toBe("aaaaaaaaTbbbbbbbbb");
+    expect(svgRows(shorter.svg)).toBe(2);
     const longer = await renderTerminal("ab" + "token" + "cd\n", {
       ...opts,
       replace: [["token", "a-much-longer-value"]],
     });
-    expect(longer.text).toBe("aba-much-l\nonger-valu\necd");
+    expect(longer.text).toBe("aba-much-longer-valuecd");
     expect(longer.svg).toContain('height="92.00"');
+    expect(svgRows(longer.svg)).toBe(3);
   });
 
   it("moves a wide character that no longer fits to the next row", async () => {
-    const { text } = await renderTerminal("abcdefgh日本\n", { cols: 10, replace: [["a", "aa"]] });
-    expect(text).toBe("aabcdefgh\n日本");
+    const { text, svg } = await renderTerminal("abcdefgh日本\n", {
+      cols: 10,
+      replace: [["a", "aa"]],
+    });
+    expect(text).toBe("aabcdefgh日本");
+    expect(svgRows(svg)).toBe(2);
   });
 
   it("drops the cell a wrapped wide character left behind", async () => {
     const { text } = await renderTerminal("abcdefghi日本\n", { cols: 10, replace: [["i", ""]] });
-    expect(text).toBe("abcdefgh日\n本");
+    expect(text).toBe("abcdefgh日本");
   });
 
   it("returns an svg document", async () => {
