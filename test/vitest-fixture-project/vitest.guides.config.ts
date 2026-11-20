@@ -14,7 +14,7 @@ export default defineConfig({
       guidesReporter({
         output,
         shots: { dir: "site/assets" },
-        manifest: "site/docs/.e2g.json",
+        manifest: "site/.e2g.json",
         prune: process.env.GUIDES_PRUNE === "1",
       }),
     ],

@@ -8,3 +8,4 @@ Breaking changes:
 
 - A step's `shots` are now `items`, which also hold commands and screens. A shot is `{ kind: "shot", name, alt, images }`, so filter on `kind` where you read a step's shots.
 - The Playwright reporter's `shots.path(page, name, variant)` gets the file extension as a fourth argument, `ext`.
+- Both reporters keep generated files under the manifest's directory. A page, screenshot or screen SVG outside it fails the run and nothing is written, so put the manifest in the top folder of the generated files. A manifest entry outside it is never deleted; it is dropped from the manifest with a warning.

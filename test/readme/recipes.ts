@@ -156,7 +156,7 @@ test("open settings", guidePage("open-settings", meta), async ({ page, guide, gu
 });
 
 const tour: GuideOutput = {
-  path: (page) => `site/tours/${page.locale}/${page.slug}.json`,
+  path: (page) => `docs/tours/${page.locale}/${page.slug}.json`,
   render: (page) => {
     const steps = page.blocks.flatMap((block) =>
       block.kind === "step" ? [{ text: block.text, items: block.items }] : [],

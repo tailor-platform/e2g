@@ -1,15 +1,8 @@
 import { dirname, join, resolve } from "node:path";
 import { collectPages, type ExpectedTest, type TestOutcome } from "./collect.js";
-import {
-  caseInsensitive,
-  commit,
-  EMPTY_MANIFEST,
-  entryOutside,
-  readFile,
-  readManifest,
-} from "./io.js";
+import { caseInsensitive, commit, EMPTY_MANIFEST, readFile, readManifest } from "./io.js";
 import { foreignPaths } from "./manifests.js";
-import { outputPaths, plan, type PlanInput } from "./plan.js";
+import { plan, type PlanInput } from "./plan.js";
 import type { GuideOutput, PageInfo, RunScope } from "./types.js";
 
 export type ShotPath = (
@@ -60,17 +53,10 @@ export function writeGuides(input: WriteGuidesInput): boolean {
             `${name}.${ext}`,
           ),
   };
-  // the directories this run writes into are where a previous run's files belong
-  const roots = [shotsDir, manifestDir, ...outputPaths(pages, paths).map((p) => dirname(p))];
-  const read = readManifest(manifestPath);
-  const outside = read && entryOutside(read, manifestDir, roots);
-  const manifest = outside === undefined ? read : null;
+  const manifest = readManifest(manifestPath);
   const previous = manifest ?? EMPTY_MANIFEST;
-  if (!read) log(`left ${manifestPath} as it is because it could not be read; fix or delete it`);
-  else if (!manifest)
-    log(
-      `left ${manifestPath} as it is because it lists ${outside}, which is outside the guide folders; fix or delete it`,
-    );
+  if (!manifest)
+    log(`left ${manifestPath} as it is because it could not be read; fix or delete it`);
   const result = plan({
     scope: input.scope,
     prune: manifest !== null && input.prune,
@@ -81,6 +67,7 @@ export function writeGuides(input: WriteGuidesInput): boolean {
     foreign: foreignPaths(manifestPath, insensitive),
     caseInsensitive: insensitive,
     manifestDir,
+    manifestPath,
     manifest: previous,
     current: readFile,
     same: input.same,
@@ -88,7 +75,7 @@ export function writeGuides(input: WriteGuidesInput): boolean {
   for (const m of [...result.errors, ...result.messages]) log(m);
   commit({
     ops: result.ops,
-    roots: [shotsDir, manifestDir],
+    roots: [manifestDir],
     manifestPath: manifest ? manifestPath : null,
     previous,
     manifest: result.manifest,

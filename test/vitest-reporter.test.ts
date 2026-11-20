@@ -92,7 +92,7 @@ const FILES = [
   "site/docs/ja/show-help.md",
   "site/assets/en/create-a-project/picker.svg",
   "site/assets/ja/create-a-project/picker.svg",
-  "site/docs/.e2g.json",
+  "site/.e2g.json",
 ];
 
 type Snapshot = Map<string, { mtime: number; data: string }>;
@@ -136,18 +136,15 @@ describe.concurrent("guidesReporter", { timeout: 180_000 }, () => {
     expect(ja).toContain("1. バージョンを確認します。");
     expect(ja).toContain("![テンプレートの選択画面](../../assets/ja/create-a-project/picker.svg)");
     expect(read(dir, "site/assets/en/create-a-project/picker.svg")).toMatch(/^<svg/);
-    expect(JSON.parse(read(dir, "site/docs/.e2g.json"))).toEqual({
+    expect(JSON.parse(read(dir, "site/.e2g.json"))).toEqual({
       schemaVersion: 1,
       pages: [
-        "en/create-a-project.md",
-        "en/show-help.md",
-        "ja/create-a-project.md",
-        "ja/show-help.md",
+        "docs/en/create-a-project.md",
+        "docs/en/show-help.md",
+        "docs/ja/create-a-project.md",
+        "docs/ja/show-help.md",
       ],
-      shots: [
-        "../assets/en/create-a-project/picker.svg",
-        "../assets/ja/create-a-project/picker.svg",
-      ],
+      shots: ["assets/en/create-a-project/picker.svg", "assets/ja/create-a-project/picker.svg"],
     });
   });
 
@@ -184,9 +181,9 @@ describe.concurrent("guidesReporter", { timeout: 180_000 }, () => {
     expect(existsSync(join(dir, "site/docs/en/show-help.md"))).toBe(false);
     expect(existsSync(join(dir, "site/docs/ja/show-help.md"))).toBe(false);
     expect(existsSync(join(dir, "site/docs/en/create-a-project.md"))).toBe(true);
-    expect(JSON.parse(read(dir, "site/docs/.e2g.json")).pages).toEqual([
-      "en/create-a-project.md",
-      "ja/create-a-project.md",
+    expect(JSON.parse(read(dir, "site/.e2g.json")).pages).toEqual([
+      "docs/en/create-a-project.md",
+      "docs/ja/create-a-project.md",
     ]);
   });
 
@@ -194,8 +191,8 @@ describe.concurrent("guidesReporter", { timeout: 180_000 }, () => {
     const dir = project();
     mkdirSync(join(dir, "site/docs"), { recursive: true });
     writeFileSync(
-      join(dir, "site/docs/.guides.json"),
-      JSON.stringify({ schemaVersion: 1, pages: ["en/show-help.md"], shots: [] }),
+      join(dir, "site/.guides.json"),
+      JSON.stringify({ schemaVersion: 1, pages: ["docs/en/show-help.md"], shots: [] }),
     );
     const result = await run(dir);
     expect(result.code).toBe(1);

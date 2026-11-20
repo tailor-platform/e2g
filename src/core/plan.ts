@@ -7,7 +7,7 @@ import {
   type Shot,
 } from "../types.js";
 import type { CollectedPage, CollectedShot, CollectedSvg } from "./collect.js";
-import { directoryOf, relativePath, resolvePath } from "./paths.js";
+import { directoryOf, isInside, relativePath, resolvePath } from "./paths.js";
 import type { GuideOutput, Manifest, Op, PageInfo, RunScope } from "./types.js";
 
 export interface PlanInput {
@@ -28,6 +28,8 @@ export interface PlanInput {
   /** Whether the file system treats paths that differ only in case as one file. */
   caseInsensitive: boolean;
   manifestDir: string;
+  /** Where the manifest is, to name it in messages. */
+  manifestPath: string;
   manifest: Manifest;
   current(path: string): Buffer | null;
   same(a: Buffer, b: Buffer): boolean;
@@ -89,28 +91,6 @@ function targetsOf({ blocks, ...info }: CollectedPage, input: PlanInput): Target
   return [{ owner, path, data: input.output.render(page), kind: "pages" }, ...shots];
 }
 
-/** Every path the pages would write, without rendering them. */
-export function outputPaths(
-  pages: CollectedPage[],
-  input: Pick<PlanInput, "output" | "shotPath">,
-): string[] {
-  return pages.flatMap(({ blocks, ...info }) => [
-    input.output.path(info),
-    ...blocks.flatMap((b) =>
-      b.kind === "say"
-        ? []
-        : b.items.flatMap((item) => {
-            if (isShot(item))
-              return item.images.map((image) =>
-                input.shotPath(info, item.name, image.variant, "png"),
-              );
-            if (item.kind === "command") return [];
-            return [input.shotPath(info, item.name, undefined, "svg")];
-          }),
-    ),
-  ]);
-}
-
 function collisions(targets: Target[], id: Identity): string[] {
   const owners = new Map<string, { owner: string; path: string }>();
   const errors: string[] = [];
@@ -132,6 +112,40 @@ function collisions(targets: Target[], id: Identity): string[] {
       );
   }
   return errors;
+}
+
+// the manifest's directory bounds everything a prune may later delete, so nothing is written outside it
+function outsideRoot(targets: Target[], root: string, id: Identity): string[] {
+  return targets
+    .filter((t) => !isInside(id(root), id(t.path)))
+    .map(
+      (t) =>
+        `page ${t.owner} writes ${t.path}, outside ${root} where the manifest is; put the manifest in the top folder of the generated files`,
+    );
+}
+
+// a hand-edited entry could name any file, so one outside the manifest's directory is dropped, never deleted
+function withinRoot(
+  manifest: Manifest,
+  root: string,
+  id: Identity,
+  from: string,
+): { manifest: Manifest; ignored: string[] } {
+  const ignored: string[] = [];
+  const keep = (entries: string[]) =>
+    entries.filter((entry) => {
+      const inside = isInside(id(root), id(resolvePath(root, entry)));
+      if (!inside) ignored.push(`ignored ${entry} in ${from}: it is outside ${root}`);
+      return inside;
+    });
+  return {
+    manifest: {
+      schemaVersion: 1,
+      pages: keep(manifest.pages),
+      shots: keep(manifest.shots),
+    },
+    ignored,
+  };
 }
 
 function foreignWrites(targets: Target[], foreign: Set<string>, id: Identity): string[] {
@@ -220,25 +234,31 @@ export function plan(input: PlanInput): Plan {
   if (input.errors.length > 0) return nothing([], because(input.errors));
   const id: Identity = input.caseInsensitive ? caseKey : fileKey;
   const targets = input.pages.flatMap((page) => targetsOf(page, input));
-  const clashes = [...collisions(targets, id), ...foreignWrites(targets, input.foreign, id)];
+  const clashes = [
+    ...outsideRoot(targets, input.manifestDir, id),
+    ...collisions(targets, id),
+    ...foreignWrites(targets, input.foreign, id),
+  ];
   if (clashes.length > 0) return nothing([], because(clashes));
 
-  const messages = input.incomplete.map((entry) => `did not write ${entry}`);
+  const { manifest: old, ignored } = withinRoot(
+    input.manifest,
+    input.manifestDir,
+    id,
+    input.manifestPath,
+  );
+  const messages = [...ignored, ...input.incomplete.map((entry) => `did not write ${entry}`)];
   const blocker = pruneBlocker(input);
   if (blocker) messages.push(blocker);
   const pruning = input.prune && !blocker;
-  const deletes = pruning
-    ? stale(input.manifest, targets, input.manifestDir, input.foreign, id)
-    : [];
+  const deletes = pruning ? stale(old, targets, input.manifestDir, input.foreign, id) : [];
   // on a case-insensitive file system the delete removes the target too, so it must be written again
   const deleted = new Set(deletes.map((d) => id(d.path)));
   const writes: Op[] = targets
     .filter((t) => deleted.has(id(t.path)) || !unchanged(t, input))
     .map(({ path, data }) => ({ op: "write", path, data }));
   const made = produced(targets, input.manifestDir);
-  const next = pruning
-    ? made
-    : union(relinquish(input.manifest, input.manifestDir, input.foreign, id), made);
+  const next = pruning ? made : union(relinquish(old, input.manifestDir, input.foreign, id), made);
   const manifest = sameManifest(input.manifest, next) ? null : next;
   return { ops: [...deletes, ...writes], manifest, messages, errors: [] };
 }
