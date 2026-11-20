@@ -1,0 +1,38 @@
+#!/usr/bin/env node
+const [command, name = "world"] = process.argv.slice(2);
+
+function pick(question, choices) {
+  let index = 0;
+  const draw = (first) => {
+    if (!first) process.stdout.write(`\x1b[${choices.length}A`);
+    for (const [i, choice] of choices.entries())
+      process.stdout.write(`\x1b[2K${i === index ? "\x1b[36m❯ " : "  "}${choice}\x1b[0m\n`);
+  };
+  process.stdout.write(`\x1b[1m? ${question}\x1b[0m \x1b[2m(↑↓, enter)\x1b[0m\n`);
+  draw(true);
+  process.stdin.setRawMode(true);
+  process.stdin.on("data", (key) => {
+    const k = key.toString();
+    if (k === "\x1b[A") index = (index + choices.length - 1) % choices.length;
+    else if (k === "\x1b[B") index = (index + 1) % choices.length;
+    else if (k === "\r") {
+      process.stdin.setRawMode(false);
+      console.log(`Created ${choices[index]} project`);
+      process.exit(0);
+    } else if (k === "\x03") process.exit(130);
+    draw(false);
+  });
+}
+
+if (command === "--version") {
+  console.log("demo 1.0.0");
+} else if (command === "greet") {
+  console.log(`\x1b[32mHello, ${name}!\x1b[0m`);
+} else if (command === "init") {
+  console.log("Created demo.json");
+} else if (command === "new") {
+  pick("Choose a template", ["minimal", "with-auth", "full-stack"]);
+} else {
+  console.error(`unknown command: ${command ?? ""}`);
+  process.exit(1);
+}

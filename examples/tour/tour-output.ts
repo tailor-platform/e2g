@@ -52,10 +52,11 @@ function stops(page: Page, files: Record<string, string>) {
     if (block.kind === "say")
       return [{ kind: "say", text: block.text, code: codeOf(block, files) }];
     n += 1;
-    if (block.shots.length === 0)
+    const shots = block.items.filter((item) => item.kind === "shot");
+    if (shots.length === 0)
       return [{ kind: "step", n, text: block.text, code: codeOf(block, files) }];
     // an image per screen size, each with its own regions; the viewer picks the one that fits
-    return block.shots.map(({ name, alt, images }) => ({
+    return shots.map(({ name, alt, images }) => ({
       kind: "step",
       n,
       text: block.text,

@@ -12,10 +12,14 @@ export type { GuideOptions, GuideShotSettings } from "./use.js";
 // the types a spec file needs, so it imports from one place; Register is augmented on "@tailor-platform/e2g"
 export type {
   Block,
+  CommandItem,
+  Item,
   Locale,
   Meta,
   Page,
   Region,
+  ScreenImage,
+  ScreenItem,
   Shot,
   ShotImage,
   SourceLocation,

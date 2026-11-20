@@ -83,7 +83,7 @@ const FILES = [
   "site/assets/ja/menu/menu.png",
   "site/assets/en/settings/settings.png",
   "site/assets/ja/settings/settings.png",
-  "site/docs/.guides.json",
+  "site/.guides.json",
 ];
 
 type Snapshot = Map<string, { mtime: number; data: string }>;
@@ -151,16 +151,21 @@ describe.concurrent("GuidesReporter", { timeout: 120_000 }, () => {
     expect(read(dir, "site/docs/ja/settings.md")).toContain(
       "2. 設定を選びます。\n\n   ![設定の画面](../../assets/ja/settings/settings.png)",
     );
-    expect(read(dir, "site/docs/.guides.json")).toBe(
+    expect(read(dir, "site/.guides.json")).toBe(
       `${JSON.stringify(
         {
           schemaVersion: 1,
-          pages: ["en/menu.md", "en/settings.md", "ja/menu.md", "ja/settings.md"],
+          pages: [
+            "docs/en/menu.md",
+            "docs/en/settings.md",
+            "docs/ja/menu.md",
+            "docs/ja/settings.md",
+          ],
           shots: [
-            "../assets/en/menu/menu.png",
-            "../assets/en/settings/settings.png",
-            "../assets/ja/menu/menu.png",
-            "../assets/ja/settings/settings.png",
+            "assets/en/menu/menu.png",
+            "assets/en/settings/settings.png",
+            "assets/ja/menu/menu.png",
+            "assets/ja/settings/settings.png",
           ],
         },
         null,
@@ -234,8 +239,8 @@ describe.concurrent("GuidesReporter", { timeout: 120_000 }, () => {
         PNG.sync.read(readFileSync(join(dir, `site/assets/ja/menu/${variant}/menu.png`))).width;
       // the mobile project has deviceScaleFactor 2, so its shot of the same element is twice as wide
       expect(width("mobile")).toBe(width("desktop") * 2);
-      expect(JSON.parse(read(dir, "site/docs/.guides.json")).shots).toContain(
-        "../assets/ja/settings/mobile/settings.png",
+      expect(JSON.parse(read(dir, "site/.guides.json")).shots).toContain(
+        "assets/ja/settings/mobile/settings.png",
       );
     });
 
@@ -339,10 +344,10 @@ describe.concurrent("GuidesReporter", { timeout: 120_000 }, () => {
     expect(existsSync(join(dir, "site/docs/en/menu.md"))).toBe(true);
     expect(existsSync(join(dir, "site/assets/en/menu/menu.png"))).toBe(true);
     expect(read(dir, "site/docs/en/hand-written.md")).toBe("kept");
-    expect(JSON.parse(read(dir, "site/docs/.guides.json"))).toEqual({
+    expect(JSON.parse(read(dir, "site/.guides.json"))).toEqual({
       schemaVersion: 1,
-      pages: ["en/menu.md", "ja/menu.md"],
-      shots: ["../assets/en/menu/menu.png", "../assets/ja/menu/menu.png"],
+      pages: ["docs/en/menu.md", "docs/ja/menu.md"],
+      shots: ["assets/en/menu/menu.png", "assets/ja/menu/menu.png"],
     });
   });
 
@@ -635,19 +640,19 @@ test("located", guidePage("located", { title: { en: "Located", ja: "Located" } }
   it("an unreadable manifest is left as it is, and nothing is pruned", async () => {
     const dir = project();
     ok(await run(dir));
-    const manifest = join(dir, "site/docs/.guides.json");
+    const manifest = join(dir, "site/.guides.json");
     writeFileSync(manifest, "{ not json");
     rmSync(join(dir, "site/docs/en/menu.md"));
     rmSync(join(dir, "tests/settings.spec.ts"));
     const result = await run(dir, { env: PRUNE });
     ok(result);
-    expect(read(dir, "site/docs/.guides.json")).toBe("{ not json");
+    expect(read(dir, "site/.guides.json")).toBe("{ not json");
     expect(result.stderr).toContain("e2g: left ");
     expect(existsSync(join(dir, "site/docs/en/menu.md"))).toBe(true);
     for (const file of FILES.filter((f) => f.includes("settings")))
       expect(existsSync(join(dir, file)), file).toBe(true);
     expect(result.stderr).toContain(
-      "site/docs/.guides.json as it is because it could not be read; fix or delete it",
+      "site/.guides.json as it is because it could not be read; fix or delete it",
     );
   });
 });

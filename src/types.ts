@@ -54,16 +54,41 @@ export interface SourceLocation {
   column: number;
 }
 
-export type Block<S = Shot> =
+export interface CommandItem {
+  kind: "command";
+  command: string;
+  output: string;
+}
+
+export interface ScreenImage {
+  src: string;
+}
+
+export interface ScreenItem<I = ScreenImage> {
+  kind: "screen";
+  name: string;
+  alt: string;
+  text: string;
+  image: I;
+}
+
+export type ShotItem<S = Shot> = { kind: "shot" } & S;
+
+export type Item<S = Shot, I = ScreenImage> = ShotItem<S> | CommandItem | ScreenItem<I>;
+
+export const isShot = <S, I>(item: Item<S, I>): item is ShotItem<S> => item.kind === "shot";
+
+export type Block<S = Shot, I = ScreenImage> =
   | { kind: "say"; text: string; location?: SourceLocation }
-  | { kind: "step"; text: string; shots: S[]; location?: SourceLocation };
+  | { kind: "step"; text: string; items: Item<S, I>[]; location?: SourceLocation };
 
 export interface GuideRecord<M = unknown> {
   schemaVersion: 1;
   slug: string;
   locale: string;
   meta: M;
-  blocks: Block<TakenShot>[];
+  // a screen's SVG travels beside the record, so its image is null here
+  blocks: Block<TakenShot, null>[];
 }
 
 export interface Page<M = Meta> {

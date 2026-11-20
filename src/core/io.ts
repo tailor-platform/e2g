@@ -5,11 +5,67 @@ import {
   renameSync,
   rmdirSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from "node:fs";
-import { dirname, isAbsolute, relative, sep } from "node:path";
-import { relativePath } from "./paths.js";
+import { basename, dirname, join } from "node:path";
+import { isInside, relativePath } from "./paths.js";
 import type { Manifest, Op } from "./types.js";
+
+const swapCase = (name: string) =>
+  name.replace(/[a-z]/gi, (c) => (c === c.toLowerCase() ? c.toUpperCase() : c.toLowerCase()));
+
+export interface ProbeFs {
+  statSync(path: string): { ino: number | bigint; dev: number | bigint; isDirectory(): boolean };
+  writeFileSync(path: string, data: string, options: { flag: "wx" }): void;
+  rmSync(path: string, options: { force: true }): void;
+}
+
+const nodeFs: ProbeFs = { statSync, writeFileSync, rmSync };
+
+function nearestDir(dir: string, fs: ProbeFs): string | null {
+  for (let at = dir; ; at = dirname(at)) {
+    try {
+      if (fs.statSync(at).isDirectory()) return at;
+    } catch {}
+    if (dirname(at) === at) return null;
+  }
+}
+
+function sameFile(a: string, b: string, fs: ProbeFs): boolean {
+  try {
+    const x = fs.statSync(a);
+    const y = fs.statSync(b);
+    return x.ino === y.ino && x.dev === y.dev;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Whether the file system holding `dir`, or its nearest existing ancestor, treats paths that differ only in
+ * case as one file. Only names inside that directory are probed, so a volume mounted under a root with other
+ * rules is judged by its own.
+ */
+export function caseInsensitive(dir: string, fs: ProbeFs = nodeFs): boolean {
+  const fallback = process.platform === "darwin" || process.platform === "win32";
+  const at = nearestDir(dir, fs);
+  if (at === null) return fallback;
+  const probe = join(at, `.e2g-case-${process.pid}-${Math.random().toString(36).slice(2)}-Probe`);
+  try {
+    fs.writeFileSync(probe, "", { flag: "wx" });
+  } catch {
+    // a read-only directory: compare its own name under another spelling, keeping its parent as it is
+    const name = basename(at);
+    const other = join(dirname(at), swapCase(name));
+    return other === at ? fallback : sameFile(at, other, fs);
+  }
+  try {
+    return sameFile(probe, join(at, swapCase(basename(probe))), fs);
+  } finally {
+    fs.rmSync(probe, { force: true });
+  }
+}
 
 export const EMPTY_MANIFEST: Manifest = { schemaVersion: 1, pages: [], shots: [] };
 
@@ -24,16 +80,19 @@ export function readFile(path: string): Buffer | null {
 const strings = (value: unknown): value is string[] =>
   Array.isArray(value) && value.every((v) => typeof v === "string");
 
-/** `null` when the file exists but is not a version 1 manifest, so it must be left as it is. */
-export function readManifest(path: string): Manifest | null {
-  const data = readFile(path);
-  if (!data) return EMPTY_MANIFEST;
+export function parseManifest(data: Buffer): Manifest | null {
   try {
     const m = JSON.parse(data.toString("utf8")) as Partial<Manifest> | null;
     if (m?.schemaVersion === 1 && strings(m.pages) && strings(m.shots))
       return { schemaVersion: 1, pages: m.pages, shots: m.shots };
   } catch {}
   return null;
+}
+
+/** `null` when the file exists but is not a version 1 manifest, so it must be left as it is. */
+export function readManifest(path: string): Manifest | null {
+  const data = readFile(path);
+  return data ? parseManifest(data) : EMPTY_MANIFEST;
 }
 
 // a crash mid-write leaves the old file or the new one, never half of either
@@ -53,11 +112,6 @@ export function writeManifest(path: string, manifest: Manifest): void {
   writeAtomic(path, `${JSON.stringify(manifest, null, 2)}\n`);
 }
 
-const inside = (root: string, path: string) => {
-  const rel = relative(root, path);
-  return rel !== "" && rel !== ".." && !rel.startsWith(`..${sep}`) && !isAbsolute(rel);
-};
-
 // null when the directory is already gone, as after an earlier delete in the same directory
 function isEmpty(dir: string): boolean | null {
   try {
@@ -69,7 +123,7 @@ function isEmpty(dir: string): boolean | null {
 
 // removes the directories a delete left empty, up to but never including a root
 function removeEmptyParents(file: string, roots: string[]): void {
-  for (let dir = dirname(file); roots.some((root) => inside(root, dir)); dir = dirname(dir)) {
+  for (let dir = dirname(file); roots.some((root) => isInside(root, dir)); dir = dirname(dir)) {
     const empty = isEmpty(dir);
     if (empty === false) return;
     if (empty) rmdirSync(dir);

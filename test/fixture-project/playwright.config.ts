@@ -17,7 +17,7 @@ const output: GuideOutput = {
 const guides: GuidesReporterOptions = {
   output,
   shots: { dir: "site/assets", ...(env.GUIDES_SAME === "off" ? { same: false } : {}) },
-  manifest: "site/docs/.guides.json",
+  manifest: "site/.guides.json",
   prune: env.GUIDES_PRUNE === "1",
 };
 
