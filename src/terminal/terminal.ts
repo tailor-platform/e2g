@@ -34,12 +34,54 @@ const DEFAULT_ROWS = 24;
 const DEFAULT_IDLE = 100;
 const KILL_GRACE = 2_000;
 
+const GROUP_POLL = 20;
+
 const delay = (ms: number) => {
   let timer: NodeJS.Timeout | undefined;
   const promise = new Promise<void>((resolve) => {
     timer = setTimeout(resolve, ms);
   });
   return { promise, cancel: () => clearTimeout(timer) };
+};
+
+// The pty makes `/bin/sh` a session and process group leader. Where sh does not exec the command
+// (dash on Debian and Ubuntu), the leader is not the command: it dies on the hangup right away, the
+// kernel then hangs up the terminal and node-pty reports exit while the command is still running its
+// shutdown handler. So dispose signals and waits for the whole group, not only the leader.
+const signalGroup = (pid: number, signal: NodeJS.Signals) => {
+  try {
+    process.kill(-pid, signal);
+  } catch {
+    // ESRCH: the group is already gone
+  }
+};
+
+const groupAlive = (pid: number) => {
+  try {
+    process.kill(-pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "EPERM";
+  }
+};
+
+/** Resolves true once every process has exited and its group is empty, or false after `ms`. */
+const allGone = async (procs: [PtyProcess, Promise<void>][], ms: number): Promise<boolean> => {
+  const deadline = Date.now() + ms;
+  const grace = delay(ms);
+  const exited = await Promise.race([
+    Promise.all(procs.map(([, exit]) => exit)).then(() => true),
+    grace.promise.then(() => false),
+  ]);
+  grace.cancel();
+  if (!exited) return false;
+  while (procs.some(([proc]) => groupAlive(proc.pid))) {
+    const left = deadline - Date.now();
+    if (left <= 0) return false;
+    const tick = delay(Math.min(GROUP_POLL, left));
+    await tick.promise;
+  }
+  return true;
 };
 
 export class Terminal {
@@ -94,18 +136,12 @@ export class Terminal {
   private async stop(): Promise<void> {
     this.disposed = true;
     const procs = [...this.running];
-    // a process that ignores the hangup gets SIGKILL after a grace period, and one that survives even
+    // a group that ignores the hangup gets SIGKILL after a grace period, and one that survives even
     // that is left alone after a second one rather than hanging the caller
-    for (const [proc] of procs) proc.kill();
-    const exited = Promise.all(procs.map(([, exit]) => exit));
-    const grace = delay(KILL_GRACE);
-    const first = await Promise.race([exited.then(() => true), grace.promise.then(() => false)]);
-    grace.cancel();
-    if (!first) {
-      for (const [proc] of procs) if (this.running.has(proc)) proc.kill("SIGKILL");
-      const last = delay(KILL_GRACE);
-      await Promise.race([exited, last.promise]);
-      last.cancel();
+    for (const [proc] of procs) signalGroup(proc.pid, "SIGHUP");
+    if (!(await allGone(procs, KILL_GRACE))) {
+      for (const [proc] of procs) signalGroup(proc.pid, "SIGKILL");
+      await allGone(procs, KILL_GRACE);
     }
     this.running.clear();
     for (const session of this.sessions) session.dispose();

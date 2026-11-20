@@ -159,7 +159,9 @@ describe("Terminal.run", () => {
       await Promise.all([t.dispose(), t.dispose()]);
       expect(existsSync(marker)).toBe(true);
       expect(() => process.kill(pid, 0)).toThrow();
-      expect(timers()).toBe(before);
+      expect(() => process.kill(-pid, 0)).toThrow();
+      // a timer left by an earlier test may finish meanwhile, so only growth is a leak
+      expect(timers()).toBeLessThanOrEqual(before);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -174,9 +176,9 @@ describe("Terminal.run", () => {
     const pid = session.pid;
     const started = Date.now();
     await t.dispose();
-    // Linux may end it sooner than the SIGKILL fallback once the pty closes; only the bound matters
     expect(Date.now() - started).toBeLessThan(4_500);
     expect(() => process.kill(pid, 0)).toThrow();
+    expect(() => process.kill(-pid, 0)).toThrow();
   });
 
   it("dispose is safe to call twice", async () => {
