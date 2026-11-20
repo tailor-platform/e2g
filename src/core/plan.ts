@@ -89,13 +89,42 @@ function targetsOf({ blocks, ...info }: CollectedPage, input: PlanInput): Target
   return [{ owner, path, data: input.output.render(page), kind: "pages" }, ...shots];
 }
 
-function collisions(targets: Target[]): string[] {
-  const owners = new Map<string, string>();
+/** Every path the pages would write, without rendering them. */
+export function outputPaths(
+  pages: CollectedPage[],
+  input: Pick<PlanInput, "output" | "shotPath">,
+): string[] {
+  return pages.flatMap(({ blocks, ...info }) => [
+    input.output.path(info),
+    ...blocks.flatMap((b) =>
+      b.kind === "say"
+        ? []
+        : b.items.flatMap((item) => {
+            if (isShot(item))
+              return item.images.map((image) =>
+                input.shotPath(info, item.name, image.variant, "png"),
+              );
+            if (item.kind === "command") return [];
+            return [input.shotPath(info, item.name, undefined, "svg")];
+          }),
+    ),
+  ]);
+}
+
+function collisions(targets: Target[], id: Identity): string[] {
+  const owners = new Map<string, { owner: string; path: string }>();
   const errors: string[] = [];
   for (const { owner, path } of targets) {
-    const first = owners.get(path);
-    if (first === undefined) owners.set(path, owner);
-    else if (first !== owner) errors.push(`pages ${first} and ${owner} both write ${path}`);
+    const first = owners.get(id(path));
+    if (first === undefined) owners.set(id(path), { owner, path });
+    else if (first.path !== path)
+      errors.push(
+        first.owner === owner
+          ? `page ${owner} writes ${first.path} and ${path}, which are the same file on this file system`
+          : `pages ${first.owner} and ${owner} write ${first.path} and ${path}, which are the same file on this file system`,
+      );
+    else if (first.owner !== owner)
+      errors.push(`pages ${first.owner} and ${owner} both write ${path}`);
     // a shots.path that ignores the variant would put every variant's image in one file
     else
       errors.push(
@@ -191,7 +220,7 @@ export function plan(input: PlanInput): Plan {
   if (input.errors.length > 0) return nothing([], because(input.errors));
   const id: Identity = input.caseInsensitive ? caseKey : fileKey;
   const targets = input.pages.flatMap((page) => targetsOf(page, input));
-  const clashes = [...collisions(targets), ...foreignWrites(targets, input.foreign, id)];
+  const clashes = [...collisions(targets, id), ...foreignWrites(targets, input.foreign, id)];
   if (clashes.length > 0) return nothing([], because(clashes));
 
   const messages = input.incomplete.map((entry) => `did not write ${entry}`);

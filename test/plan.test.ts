@@ -479,6 +479,45 @@ describe("plan", () => {
     ]);
   });
 
+  describe("paths that differ only in case", () => {
+    const twoScreens = (over: Partial<PlanInput>) =>
+      plan(
+        input({
+          pages: [page("intro", ["Home", "home"])],
+          ...over,
+        }),
+      );
+
+    it("are one file on a case-insensitive file system", () => {
+      const result = twoScreens({ caseInsensitive: true });
+      expect(result.ops).toEqual([]);
+      expect(result.errors).toEqual([
+        "wrote no guide pages because page intro/en writes /site/assets/en/intro/Home.png and /site/assets/en/intro/home.png, which are the same file on this file system",
+      ]);
+    });
+
+    it("are two files on a case-sensitive file system", () => {
+      const result = twoScreens({ caseInsensitive: false });
+      expect(result.errors).toEqual([]);
+      expect(writes(result.ops)).toContain("/site/assets/en/intro/Home.png");
+      expect(writes(result.ops)).toContain("/site/assets/en/intro/home.png");
+    });
+
+    it("name both pages when they come from two pages", () => {
+      const result = plan(
+        input({
+          pages: [page("Intro"), page("intro")],
+          caseInsensitive: true,
+          shotPath: (p, name) => `/site/assets/${p.slug}-${name}.png`,
+        }),
+      );
+      expect(result.errors).toEqual([
+        "wrote no guide pages because pages Intro/en and intro/en write /site/docs/en/Intro.md and /site/docs/en/intro.md, which are the same file on this file system",
+        "wrote no guide pages because pages Intro/en and intro/en write /site/assets/Intro-menu.png and /site/assets/intro-menu.png, which are the same file on this file system",
+      ]);
+    });
+  });
+
   it("an image's src is relative to the page's directory", () => {
     const result = plan(
       input({

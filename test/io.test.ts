@@ -14,12 +14,14 @@ import {
   apply,
   caseInsensitive,
   commit,
+  entryOutside,
   type ProbeFs,
   readFile,
   readManifest,
   writeManifest,
 } from "../src/core/io.js";
 import { foreignPaths } from "../src/core/manifests.js";
+import { writeGuides } from "../src/core/write.js";
 
 let dir: string;
 beforeEach(() => {
@@ -248,5 +250,100 @@ describe("caseInsensitive", () => {
     const fs = mountedFs(false);
     expect(caseInsensitive("/mnt/c/docs", fs)).toBe(true);
     expect(caseInsensitive("/home/docs", fs)).toBe(false);
+  });
+});
+
+describe("entryOutside", () => {
+  const manifest = (...pages: string[]) => ({ schemaVersion: 1 as const, pages, shots: [] });
+
+  it("accepts entries under a root", () => {
+    const roots = ["/site/docs", "/site/assets"];
+    expect(entryOutside(manifest("en/intro.md", "../assets/en/a.png"), "/site/docs", roots)).toBe(
+      undefined,
+    );
+  });
+
+  it("names an entry that leaves every root", () => {
+    expect(
+      entryOutside(manifest("en/intro.md", "../../important.txt"), "/site/docs", ["/site/docs"]),
+    ).toBe("../../important.txt");
+  });
+
+  it("refuses an entry that is a root itself", () => {
+    expect(entryOutside(manifest("."), "/site/docs", ["/site/docs"])).toBe(".");
+  });
+});
+
+describe("writeGuides", () => {
+  const run = (prune: boolean, log: string[]) =>
+    writeGuides({
+      base: dir,
+      rootDir: dir,
+      expected: [
+        {
+          id: "t",
+          slug: "intro",
+          locale: "en",
+          locales: ["en"],
+          variants: [],
+          file: join(dir, "intro.test.ts"),
+          line: 1,
+          column: 1,
+        },
+      ],
+      results: new Map([
+        [
+          "t",
+          {
+            ok: true,
+            record: {
+              schemaVersion: 1,
+              slug: "intro",
+              locale: "en",
+              meta: {},
+              blocks: [{ kind: "say", text: "Hello" }],
+            },
+            shots: new Map(),
+          },
+        ],
+      ]),
+      scope: { partial: false },
+      output: { path: (p) => `docs/${p.locale}/${p.slug}.md`, render: () => "page\n" },
+      shots: { dir: "docs/assets" },
+      manifest: "docs/.guides.json",
+      prune,
+      same: () => false,
+      log: (m) => log.push(m),
+    });
+
+  it("refuses to prune a manifest that lists a file outside the guide folders", () => {
+    const outside = join(dir, "important.txt");
+    writeFileSync(outside, "keep");
+    mkdirSync(join(dir, "docs"));
+    const manifestPath = join(dir, "docs", ".guides.json");
+    const listed = { schemaVersion: 1 as const, pages: ["../important.txt"], shots: [] };
+    writeManifest(manifestPath, listed);
+    const log: string[] = [];
+    expect(run(true, log)).toBe(false);
+    expect(readFileSync(outside, "utf8")).toBe("keep");
+    expect(JSON.parse(readFileSync(manifestPath, "utf8"))).toEqual(listed);
+    expect(readFileSync(join(dir, "docs", "en", "intro.md"), "utf8")).toBe("page\n");
+    expect(log[0]).toBe(
+      `left ${manifestPath} as it is because it lists ../important.txt, which is outside the guide folders; fix or delete it`,
+    );
+  });
+
+  it("prunes a manifest whose entries stay in the guide folders", () => {
+    mkdirSync(join(dir, "docs", "en"), { recursive: true });
+    const old = join(dir, "docs", "en", "old.md");
+    writeFileSync(old, "old");
+    writeManifest(join(dir, "docs", ".guides.json"), {
+      schemaVersion: 1,
+      pages: ["en/old.md"],
+      shots: [],
+    });
+    const log: string[] = [];
+    run(true, log);
+    expect(existsSync(old)).toBe(false);
   });
 });

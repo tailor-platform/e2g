@@ -1,8 +1,15 @@
 import { dirname, join, resolve } from "node:path";
 import { collectPages, type ExpectedTest, type TestOutcome } from "./collect.js";
-import { caseInsensitive, commit, EMPTY_MANIFEST, readFile, readManifest } from "./io.js";
+import {
+  caseInsensitive,
+  commit,
+  EMPTY_MANIFEST,
+  entryOutside,
+  readFile,
+  readManifest,
+} from "./io.js";
 import { foreignPaths } from "./manifests.js";
-import { plan } from "./plan.js";
+import { outputPaths, plan, type PlanInput } from "./plan.js";
 import type { GuideOutput, PageInfo, RunScope } from "./types.js";
 
 export type ShotPath = (
@@ -36,23 +43,12 @@ export function writeGuides(input: WriteGuidesInput): boolean {
   const manifestPath = at(input.manifest);
   const manifestDir = dirname(manifestPath);
   const insensitive = caseInsensitive(manifestDir);
-  const manifest = readManifest(manifestPath);
-  const previous = manifest ?? EMPTY_MANIFEST;
-  if (!manifest)
-    log(`left ${manifestPath} as it is because it could not be read; fix or delete it`);
   const { pages, incomplete, errors } = collectPages(input.expected, input.results, input.rootDir);
-  const result = plan({
-    scope: input.scope,
-    prune: manifest !== null && input.prune,
-    pages,
-    incomplete,
-    errors,
+  const paths: Pick<PlanInput, "output" | "shotPath"> = {
     output: {
       path: (page) => at(output.path(page)),
       render: (page) => output.render(page),
     },
-    foreign: foreignPaths(manifestPath, insensitive),
-    caseInsensitive: insensitive,
     shotPath: (page, name, variant, ext) =>
       shots.path
         ? at(shots.path(page, name, variant, ext))
@@ -63,6 +59,27 @@ export function writeGuides(input: WriteGuidesInput): boolean {
             ...(variant === undefined ? [] : [variant]),
             `${name}.${ext}`,
           ),
+  };
+  // the directories this run writes into are where a previous run's files belong
+  const roots = [shotsDir, manifestDir, ...outputPaths(pages, paths).map((p) => dirname(p))];
+  const read = readManifest(manifestPath);
+  const outside = read && entryOutside(read, manifestDir, roots);
+  const manifest = outside === undefined ? read : null;
+  const previous = manifest ?? EMPTY_MANIFEST;
+  if (!read) log(`left ${manifestPath} as it is because it could not be read; fix or delete it`);
+  else if (!manifest)
+    log(
+      `left ${manifestPath} as it is because it lists ${outside}, which is outside the guide folders; fix or delete it`,
+    );
+  const result = plan({
+    scope: input.scope,
+    prune: manifest !== null && input.prune,
+    pages,
+    incomplete,
+    errors,
+    ...paths,
+    foreign: foreignPaths(manifestPath, insensitive),
+    caseInsensitive: insensitive,
     manifestDir,
     manifest: previous,
     current: readFile,

@@ -9,7 +9,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, sep } from "node:path";
-import { relativePath } from "./paths.js";
+import { relativePath, resolvePath } from "./paths.js";
 import type { Manifest, Op } from "./types.js";
 
 const swapCase = (name: string) =>
@@ -95,6 +95,26 @@ export function readManifest(path: string): Manifest | null {
   return data ? parseManifest(data) : EMPTY_MANIFEST;
 }
 
+const inside = (root: string, path: string) => {
+  const rel = relative(root, path);
+  return rel !== "" && rel !== ".." && !rel.startsWith(`..${sep}`) && !isAbsolute(rel);
+};
+
+/**
+ * The first entry that resolves outside every root, since a prune deletes whatever an entry names and a
+ * hand-edited manifest could otherwise reach any file.
+ */
+export function entryOutside(
+  manifest: Manifest,
+  manifestDir: string,
+  roots: string[],
+): string | undefined {
+  return [...manifest.pages, ...manifest.shots].find((entry) => {
+    const path = resolvePath(manifestDir, entry);
+    return !roots.some((root) => inside(root, path));
+  });
+}
+
 // a crash mid-write leaves the old file or the new one, never half of either
 function writeAtomic(path: string, data: string | Buffer): void {
   mkdirSync(dirname(path), { recursive: true });
@@ -111,11 +131,6 @@ function writeAtomic(path: string, data: string | Buffer): void {
 export function writeManifest(path: string, manifest: Manifest): void {
   writeAtomic(path, `${JSON.stringify(manifest, null, 2)}\n`);
 }
-
-const inside = (root: string, path: string) => {
-  const rel = relative(root, path);
-  return rel !== "" && rel !== ".." && !rel.startsWith(`..${sep}`) && !isAbsolute(rel);
-};
 
 // null when the directory is already gone, as after an earlier delete in the same directory
 function isEmpty(dir: string): boolean | null {
