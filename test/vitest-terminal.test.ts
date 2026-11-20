@@ -1,7 +1,10 @@
 import { readFileSync } from "node:fs";
+import { dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, test as plain } from "vitest";
 import { renderTerminal } from "../src/terminal/index.js";
 import type { Replacement } from "../src/terminal/replace.js";
+import { guideProjects } from "../src/vitest/reporter/index.js";
 import { reviveTerminal, serializeTerminal } from "../src/vitest/settings.js";
 import { guidePage, test } from "../src/vitest/index.js";
 
@@ -65,6 +68,21 @@ describe("scoped settings", () => {
     );
     expect(await text(output)).toBe("40");
   });
+});
+
+test("finds tools from the test file's directory", ({ terminal }) => {
+  expect(terminal.options.binFrom).toBe(dirname(fileURLToPath(import.meta.url)));
+});
+
+plain("guide terminal settings cannot set what the fixture owns", () => {
+  const message = /cannot set home, cwd: each test's terminal runs in its own temporary home/;
+  // @ts-expect-error the fixture sets home and cwd
+  expect(() => guideProjects(["en"], { terminal: { home: "/x", cwd: "/y" } })).toThrow(message);
+  // @ts-expect-error the fixture sets binFrom
+  expect(() => serializeTerminal({ binFrom: "/x" })).toThrow(/cannot set binFrom/);
+  // a provided value is structured-cloned, so it reaches the worker as plain data
+  const provided = JSON.parse('{"cols":40,"home":"/x","cwd":"/y"}');
+  expect(() => reviveTerminal(provided)).toThrow(message);
 });
 
 plain("serialize round-trips RegExp", () => {

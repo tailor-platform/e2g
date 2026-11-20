@@ -1,12 +1,11 @@
 import type { TestProjectInlineConfiguration } from "vitest/config";
-import type { TerminalOptions } from "../../terminal/terminal.js";
 import type { Locale } from "../../types.js";
 import "../protocol.js";
-import { serializeTerminal } from "../settings.js";
+import { serializeTerminal, type GuideTerminalOptions } from "../settings.js";
 
 export interface GuideProjectsOptions {
   /** Terminal settings for every locale, or for each locale by name. */
-  terminal?: TerminalOptions | Partial<Record<Locale, TerminalOptions>>;
+  terminal?: GuideTerminalOptions | Partial<Record<Locale, GuideTerminalOptions>>;
   /** The guide test files, when they differ from the root config's `include`. */
   include?: string[];
 }
@@ -14,7 +13,7 @@ export interface GuideProjectsOptions {
 const isPerLocale = (
   terminal: GuideProjectsOptions["terminal"],
   locales: Locale[],
-): terminal is Partial<Record<Locale, TerminalOptions>> =>
+): terminal is Partial<Record<Locale, GuideTerminalOptions>> =>
   terminal !== undefined && Object.keys(terminal).some((key) => locales.includes(key as Locale));
 
 /** One Vitest project per locale, each inheriting the root config and providing its locale to the tests. */

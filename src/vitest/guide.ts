@@ -1,7 +1,7 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { mkdir, mkdtemp, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { test as base, type TestContext, type TestOptions } from "vitest";
 import { callerLocation } from "../core/location.js";
 import { real } from "../core/real.js";
@@ -9,10 +9,14 @@ import { checkName, dedent, resolve, textsOf } from "../core/text.js";
 import { renderTerminal } from "../terminal/render.js";
 import type { Replacement } from "../terminal/replace.js";
 import type { Session } from "../terminal/session.js";
-import { Terminal, type TerminalOptions } from "../terminal/terminal.js";
+import { Terminal } from "../terminal/terminal.js";
 import type { Block, Item, Locale, Meta, SourceLocation, TakenShot, Text } from "../types.js";
 import { META_KEY, type GuideMeta, type GuideRecordMeta } from "./protocol.js";
-import { reviveTerminal, type SerializedTerminalOptions } from "./settings.js";
+import {
+  reviveTerminal,
+  type GuideTerminalOptions,
+  type SerializedTerminalOptions,
+} from "./settings.js";
 
 export interface CommandResult {
   command: string;
@@ -51,7 +55,7 @@ export interface GuideFixtures {
   guide: Guide;
   guideLocale: Locale | undefined;
   /** Terminal settings; override with plain options, while the injected value is the serialized form. */
-  guideTerminal: TerminalOptions | SerializedTerminalOptions;
+  guideTerminal: GuideTerminalOptions | SerializedTerminalOptions;
   /** A terminal in its own temporary home, with `~` standing for it in recorded output. */
   terminal: Terminal;
 }
@@ -80,7 +84,7 @@ interface Recorder {
   finish(): GuideRecordMeta;
 }
 
-function createGuide(locale: Locale | undefined, terminal: TerminalOptions): Recorder {
+function createGuide(locale: Locale | undefined, terminal: GuideTerminalOptions): Recorder {
   const owner = {};
   const blocks: Block<TakenShot, null>[] = [];
   // a screen may be named __proto__, which a plain object would take as its prototype
@@ -206,7 +210,10 @@ type Injected<T> = [T, { injected: true }];
 export interface GuideFixtureDefinitions {
   guideLocale: GuideFixtures["guideLocale"];
   guideTerminal: GuideFixtures["guideTerminal"];
-  terminal: (context: Pick<GuideFixtures, "guideTerminal">, use: Use<Terminal>) => Promise<void>;
+  terminal: (
+    context: Pick<GuideFixtures, "guideTerminal"> & Pick<TestContext, "task">,
+    use: Use<Terminal>,
+  ) => Promise<void>;
   guide: (
     context: Pick<GuideFixtures, "guideLocale" | "guideTerminal"> & Pick<TestContext, "task">,
     use: Use<Guide>,
@@ -221,7 +228,7 @@ type Definitions = Omit<GuideFixtureDefinitions, "guideLocale" | "guideTerminal"
 const definitions: Definitions = {
   guideLocale: [undefined, { injected: true }],
   guideTerminal: [{}, { injected: true }],
-  terminal: async ({ guideTerminal }, use) => {
+  terminal: async ({ task, guideTerminal }, use) => {
     const settings = reviveTerminal(guideTerminal);
     // realpath, so the replacement matches what processes print where tmpdir is a symlink
     const home = await realpath(await mkdtemp(join(tmpdir(), "e2g-terminal-")));
@@ -231,6 +238,8 @@ const definitions: Definitions = {
       ...settings,
       home,
       cwd,
+      // the test file's own tools, wherever Vitest was started
+      binFrom: dirname(task.file.filepath),
       aliases: [[home, "~"], ...(settings.aliases ?? [])],
     });
     try {

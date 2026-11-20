@@ -413,7 +413,7 @@ export default defineConfig({
 });
 ```
 
-`terminal` takes `cols`, `rows`, `env`, `path` (directories put first on `PATH`), `replace`, `theme`, `idle` and `aliases`. Pass it per locale, as `{ en: {...}, ja: {...} }`, when they differ. The output is the same kind of object as before, with its types from `@tailor-platform/e2g/vitest/reporter`:
+`terminal` takes `cols`, `rows`, `env`, `path` (directories put first on `PATH`), `replace`, `theme`, `idle` and `aliases`. `home` and `cwd` are not accepted, and setting them throws: each test's terminal runs in its own temporary home, with a `project` directory in it as the working directory. Pass it per locale, as `{ en: {...}, ja: {...} }`, when they differ. The output is the same kind of object as before, with its types from `@tailor-platform/e2g/vitest/reporter`:
 
 ```ts
 // cli-output.ts
@@ -461,7 +461,7 @@ test("create a project", page, async ({ guide, terminal }) => {
 
 - `terminal.run(command)` runs it through `/bin/sh -c` and resolves with `{ command, output, exitCode }` once it exits. A non-zero exit does not throw, so check `exitCode` yourself. `output` is raw, as the pseudo-terminal sent it: lines end in `\r\n` and colors are escape codes. Check it with `toContain`, or with the text from [`renderTerminal`](#render-output-you-already-have).
 - `terminal.spawn(command)` returns a session for programs that wait for input: `write(text)`, `press(key)` (`"Enter"`, `"ArrowDown"`, `"Control+C"` and so on), `waitForText(text | RegExp)`, `waitForExit()`, `screen()` for the current text and `settle()`.
-- `guide.command(result)` shows `$ <command>` and the output under the running step. The output is run through a terminal first, so colors, carriage returns and cursor movement come out as the text a reader would have seen.
+- `guide.command(result)` shows `$ <command>` and the output under the running step. The output is run through a terminal first, so colors, carriage returns and cursor movement come out as the text a reader would have seen. A line longer than `cols` stays one line in the page, so a reader can copy it; only screens wrap at `cols`, as the terminal showed them.
 - `guide.screen(name, session, { alt })` waits until the screen stops changing, then records it. Pass `idle` to wait longer for a slow program, and `timeout` (5 seconds by default) to give it longer to stop changing; the error then starts with `guide.screen("<name>")`.
 - `guide.locale` is the locale of this run, and `undefined` in a plain test run, for a command that takes the reader's language.
 
@@ -518,7 +518,8 @@ await guide.command({ command: "mycli whoami", output: await runCli(["whoami"]) 
 A page is rewritten only when its text changes, so make the output the same on every run.
 
 - **Replace what varies.** `replace` takes `[pattern, replacement]` pairs, with a string or a RegExp as the pattern. Set it for every guide in `terminal`, or for one call with `guide.command(result, { replace })` or `guide.screen(name, session, { alt, replace })`.
-- **Control the environment.** `env` is merged over the defaults (`TERM`, `LANG=en_US.UTF-8`, `TZ=UTC`, `COLUMNS`, `LINES`, `HOME`). Set `NO_COLOR` for plain text, or the variables your CLI reads for its config and API endpoint.
+- **Control the environment.** `env` is merged over the defaults (`TERM`, `LANG=en_US.UTF-8`, `TZ=UTC`, `COLUMNS`, `LINES`, `HOME`). Set `NO_COLOR` for plain text, or the variables your CLI reads for its config and API endpoint. `NODE_ENV`, `CI` and every variable starting with `VITEST` are not passed on from the test run, so a guide comes out the same locally and in CI; set one in `env`, as in `env: { CI: "1" }`, to pass it.
+- **Find your CLI.** A command finds programs in the `node_modules/.bin` of the test file's directory and of each directory above it, then on the test run's `PATH`, wherever Vitest was started. `path` puts more directories before those. A `Terminal` made directly searches upward from its `binFrom` option, the current directory by default.
 - **Use the temporary home.** A path under it is shown as `~`, whatever the OS puts in `$TMPDIR`.
 - **Clocks cannot be frozen.** Commands run as real processes. If your CLI supports `SOURCE_DATE_EPOCH`, pass it in `env`; otherwise replace the timestamps.
 
@@ -537,7 +538,7 @@ A guide shows what a reader types to get something done. The `--help` text lists
 
 ### Render output you already have
 
-`renderTerminal(output, options?)` from `@tailor-platform/e2g/terminal` runs raw terminal output through the same terminal and returns `{ text, svg }`, for documentation tools that get the output some other way. It needs neither Vitest nor a pseudo-terminal. `options` take `cols`, `rows`, `replace`, `theme` and `scrollback`.
+`renderTerminal(output, options?)` from `@tailor-platform/e2g/terminal` runs raw terminal output through the same terminal and returns `{ text, svg }`, for documentation tools that get the output some other way. It needs neither Vitest nor a pseudo-terminal. `options` take `cols`, `rows`, `replace`, `theme` and `scrollback`. `text` has one line per line of output, however long, while the `svg` wraps lines at `cols` as the terminal did.
 
 ```ts
 export const rendered = await renderTerminal("\x1b[32mdone\x1b[0m\r\n", {
@@ -563,7 +564,7 @@ The example in [`examples/cli`](examples/cli) is a runnable setup: `pnpm example
 | `@tailor-platform/e2g/playwright`          | `guideTest`, `test` (the same object), `expect` (Playwright's), `guidePage`; types `Guide`, `GuideStepDetails`, `GuideOptions`, `GuideShotSettings`, `ShotOptions`, `Locale`, `Variant`, `Meta`, `Text`, `Page`, `Block`, `Item`, `CommandItem`, `ScreenItem`, `ScreenImage`, `Shot`, `ShotImage` |
 | `@tailor-platform/e2g/playwright/reporter` | default `GuidesReporter`; types `GuidesReporterOptions`, `GuideOutput`, `Page`, `PageInfo`                                                                                                                                                                                                        |
 | `@tailor-platform/e2g/terminal`            | `renderTerminal`, `Terminal`, `DEFAULT_THEME`; types `Session`, `RenderOptions`, `Rendered`, `Replacement`, `Alias`, `TerminalOptions`, `TerminalTheme`, `Palette`, `RunResult`                                                                                                                   |
-| `@tailor-platform/e2g/vitest`              | `guideTest`, `test` (the same object), `guideFixtures`, `expect`, `guidePage`; types `Guide`, `GuideFixtures`, `GuideFixtureDefinitions`, `CommandOptions`, `CommandResult`, `ScreenOptions`, and the page types                                                                                  |
+| `@tailor-platform/e2g/vitest`              | `guideTest`, `test` (the same object), `guideFixtures`, `expect`, `guidePage`; types `Guide`, `GuideFixtures`, `GuideFixtureDefinitions`, `GuideTerminalOptions`, `CommandOptions`, `CommandResult`, `ScreenOptions`, and the page types                                                          |
 | `@tailor-platform/e2g/vitest/reporter`     | `guideProjects`, `guidesReporter`; types `GuideProjectsOptions`, `GuidesReporterOptions`, `GuideOutput`, `Page`, `PageInfo`                                                                                                                                                                       |
 
 The root and `@tailor-platform/e2g/markdown` do not load Playwright. `@playwright/test` is an optional peer dependency, needed only for the `playwright` entries, and `vitest` for the `vitest` entries. `@lydell/node-pty` is optional too, needed only for `terminal.run` and `terminal.spawn`. `Register` is augmented on `@tailor-platform/e2g` itself.
