@@ -19,7 +19,9 @@ export function foreignPaths(manifestPath: string, caseInsensitive: boolean): Se
   }
   const paths = new Set<string>();
   // only JSON files, so pages and images that share the directory are not read
-  for (const name of names.filter((n) => key(n) !== own && n.endsWith(".json"))) {
+  for (const name of names.filter(
+    (n) => key(n) !== own && (caseInsensitive ? key(n) : n).endsWith(".json"),
+  )) {
     const data = readFile(join(dir, name));
     const manifest = data && parseManifest(data);
     if (!manifest) continue;

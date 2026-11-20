@@ -31,6 +31,10 @@ describe("Terminal.run", () => {
     expect((await make().run("exit 3")).exitCode).toBe(3);
   });
 
+  it("reports a signal exit as 128 plus the signal number", async () => {
+    expect((await make().run("kill -TERM $$")).exitCode).toBe(143);
+  });
+
   it("runs as a TTY", async () => {
     const result = await make().run('node -e "process.stdout.write(String(process.stdout.isTTY))"');
     expect(await text(result.output)).toBe("true");

@@ -187,6 +187,12 @@ describe("foreignPaths", () => {
     expect(foreignPaths(join(dir, ".CLI.json"), false)).toEqual(new Set([join(dir, "own.md")]));
   });
 
+  it("recognizes an upper-case JSON extension only on a case-insensitive file system", () => {
+    writeManifest(join(dir, ".CLI.JSON"), { schemaVersion: 1, pages: ["own.md"], shots: [] });
+    expect(foreignPaths(join(dir, ".e2g.json"), true)).toEqual(new Set([join(dir, "own.md")]));
+    expect(foreignPaths(join(dir, ".e2g.json"), false)).toEqual(new Set());
+  });
+
   it("is empty when the directory does not exist", () => {
     expect(foreignPaths(join(dir, "missing/.e2g.json"), false)).toEqual(new Set());
   });

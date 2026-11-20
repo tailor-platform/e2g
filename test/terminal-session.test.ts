@@ -25,6 +25,11 @@ function alive(pid: number): boolean {
 }
 
 describe("Session", () => {
+  it("reports a signal exit as non-zero", async () => {
+    const session = await make().spawn("kill -TERM $$");
+    expect(await session.waitForExit()).toBe(143);
+  });
+
   it("presses keys and reads the screen", async () => {
     const session = await make().spawn(`node ${picker}`);
     await session.waitForText("Choose");

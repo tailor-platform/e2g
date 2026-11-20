@@ -35,7 +35,9 @@ export function drained(raw: RawPtyProcess): PtyProcess {
   raw.onExit((event) => {
     emit(decoder.end());
     exited = true;
-    for (const listener of exitListeners) listener(event);
+    // node-pty reports a signal death as exitCode 0; the shell convention is 128 + signal
+    const normalized = event.signal ? { ...event, exitCode: 128 + event.signal } : event;
+    for (const listener of exitListeners) listener(normalized);
   });
   return {
     pid: raw.pid,
