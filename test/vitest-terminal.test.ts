@@ -143,6 +143,26 @@ describe("in a guide run", () => {
     },
   );
 
+  test.override({ guideTerminal: { aliases: [["/tmp/project", "~"]] } });
+  test(
+    "aliases apply to output from an external helper and leave terminal output alone",
+    guidePage("external-output", { title: "External output" }),
+    async ({ terminal, guide, onTestFinished }) => {
+      onTestFinished(({ task }) => {
+        expect(task.meta.e2g?.record?.blocks[0]).toMatchObject({
+          items: [
+            { kind: "command", command: "ls ~", output: "~/a" },
+            { kind: "command", command: "pwd", output: "~/project" },
+          ],
+        });
+      });
+      await guide.step("Look around.", async () => {
+        await guide.command({ command: "ls /tmp/project", output: "/tmp/project/a\r\n" });
+        await guide.command(await terminal.run("pwd"));
+      });
+    },
+  );
+
   test("a screen that never settles names itself in the error", async ({ terminal, guide }) => {
     const session = await terminal.spawn(
       `node -e "setInterval(() => process.stdout.write('.'), 20)"`,

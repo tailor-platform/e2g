@@ -78,9 +78,15 @@ export function guidePage(slug: string, meta: Meta, options: TestOptions = {}): 
 }
 
 // the command line never passes through the pty, so it gets the aliases and replacements here
+function applyAliases(text: string, aliases: Alias[]): string {
+  // a display that contains its literal would be expanded again by a second pass
+  for (const [literal, display] of aliases)
+    if (literal && !display.includes(literal)) text = text.split(literal).join(display);
+  return text;
+}
+
 function normalizeCommand(command: string, aliases: Alias[], replace: Replacement[]): string {
-  let text = command;
-  for (const [literal, display] of aliases) if (literal) text = text.split(literal).join(display);
+  let text = applyAliases(command, aliases);
   for (const [pattern, to] of replace)
     text = typeof pattern === "string" ? text.split(pattern).join(to) : text.replace(pattern, to);
   return text;
@@ -174,7 +180,7 @@ function createGuide(
         throw new Error("guide.command() needs a string command and output");
       if (!inGuideRun) return;
       const replace = [...(terminal.replace ?? []), ...(options.replace ?? [])];
-      const { text } = await renderTerminal(result.output, {
+      const { text } = await renderTerminal(applyAliases(result.output, aliases()), {
         cols: terminal.cols,
         rows: terminal.rows,
         theme: terminal.theme,

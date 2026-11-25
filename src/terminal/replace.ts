@@ -67,13 +67,28 @@ function expand(
   });
 }
 
+const BLANK_CELL: Cell = {
+  chars: " ",
+  width: 1,
+  fg: { kind: "default" },
+  bg: { kind: "default" },
+  bold: false,
+  underline: false,
+  inverse: false,
+};
+
 interface Span {
   from: number;
   to: number;
   text: string;
 }
 
-function findSpans(row: CellRow, pattern: RegExp | string, replacement: string): Span[] {
+function findSpans(
+  row: CellRow,
+  pattern: RegExp | string,
+  replacement: string,
+  fixedWidth: boolean,
+): Span[] {
   const columnOf: number[] = [];
   let text = "";
   row.forEach((cell, col) => {
@@ -96,7 +111,8 @@ function findSpans(row: CellRow, pattern: RegExp | string, replacement: string):
     const groups = args.slice(1, offsetAt) as (string | undefined)[];
     const from = columnOf[offset]!;
     const to = columnOf[offset + match.length]!;
-    if (to > from) {
+    // An insertion cannot keep columns, so only a variable-width row takes one.
+    if (to > from || !fixedWidth) {
       spans.push({
         from,
         to,
@@ -139,15 +155,18 @@ export function replaceRow(
   const tail = row.slice(end);
   for (const [pattern, replacement] of replace) {
     const current = head;
-    const spans = findSpans(current, pattern, replacement);
+    const spans = findSpans(current, pattern, replacement, fixedWidth);
     if (spans.length === 0) continue;
     // One pass over the spans in order keeps many matches on a long line linear.
     head = [];
     let at = 0;
     for (const span of spans) {
       for (; at < span.from; at++) head.push(current[at]!);
+      const insertion = span.to === span.from;
       const source = (i: number): Cell =>
-        current[Math.min(span.from + i, span.to - 1)] ?? current[span.from]!;
+        insertion
+          ? (current[Math.min(span.from, current.length - 1)] ?? BLANK_CELL)
+          : (current[Math.min(span.from + i, span.to - 1)] ?? current[span.from]!);
       for (const cell of cellsFor(span.text, source, fixedWidth ? span.to - span.from : null))
         head.push(cell);
       at = span.to;

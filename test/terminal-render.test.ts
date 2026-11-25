@@ -158,6 +158,36 @@ describe("renderTerminal", () => {
   });
 });
 
+describe("zero-length matches", () => {
+  it("insert in variable-width mode as String.prototype.replace does", async () => {
+    const cases: [string, RegExp, string][] = [
+      ["ready", /$/, "!"],
+      ["ready", /^/, "> "],
+      ["abcabc", /(?=b)/g, "|"],
+      ["axxb", /x*/g, "-"],
+      ["a b", /\b/g, "|"],
+    ];
+    for (const [input, pattern, replacement] of cases) {
+      const { text } = await renderTerminal(input, { replace: [[pattern, replacement]] });
+      expect(text).toBe(input.replace(pattern, replacement));
+    }
+  });
+
+  it("are ignored at fixed width", async () => {
+    const term = createTerminal({ cols: 10, rows: 2 });
+    await new Promise<void>((resolve) => term.write("ready", resolve));
+    const shot = snapshot(term, {
+      viewport: true,
+      replace: [
+        [/$/, "!"],
+        [/^/, ">"],
+      ],
+    });
+    expect(shot.text).toBe("ready");
+    term.dispose();
+  });
+});
+
 describe("snapshot viewport", () => {
   it("replaces per row at fixed width", async () => {
     const term = createTerminal({ cols: 20, rows: 3 });
