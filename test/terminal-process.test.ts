@@ -92,17 +92,43 @@ describe("Terminal.run", () => {
     }
   });
 
-  it("leaves out the test runner's variables unless env sets them", async () => {
+  it("passes on only TMPDIR, USER and LOGNAME from the parent, plus env", async () => {
     const saved = { ...process.env };
-    Object.assign(process.env, { NODE_ENV: "test", CI: "true", VITEST_EXTRA: "1" });
+    Object.assign(process.env, {
+      XDG_CONFIG_HOME: "/xdg",
+      LC_ALL: "C",
+      GITHUB_ACTIONS: "true",
+      SECRET_TOKEN: "s3cret",
+      NODE_ENV: "test",
+      CI: "true",
+      VITEST_EXTRA: "1",
+      TMPDIR: "/tmp/e2g-tmp",
+      USER: "someone",
+      LOGNAME: "someone",
+    });
     try {
-      const print =
-        'node -e "console.log(process.env.NODE_ENV, process.env.CI, process.env.VITEST, process.env.VITEST_EXTRA)"';
+      const keys = [
+        "XDG_CONFIG_HOME",
+        "LC_ALL",
+        "GITHUB_ACTIONS",
+        "SECRET_TOKEN",
+        "NODE_ENV",
+        "CI",
+        "VITEST_EXTRA",
+        "TMPDIR",
+        "USER",
+        "LOGNAME",
+      ];
+      const print = `node -e "console.log(${keys.map((k) => `process.env.${k}`).join(", ")})"`;
       expect(await text((await make().run(print)).output)).toBe(
-        "undefined undefined undefined undefined",
+        "undefined undefined undefined undefined undefined undefined undefined /tmp/e2g-tmp someone someone",
       );
-      const back = await make({ env: { CI: "1", NODE_ENV: "production" } }).run(print);
-      expect(await text(back.output)).toBe("production 1 undefined undefined");
+      const back = await make({ env: { CI: "1", SECRET_TOKEN: "given", USER: undefined } }).run(
+        print,
+      );
+      expect(await text(back.output)).toBe(
+        "undefined undefined undefined given undefined 1 undefined /tmp/e2g-tmp undefined someone",
+      );
     } finally {
       for (const key of Object.keys(process.env)) if (!(key in saved)) delete process.env[key];
       Object.assign(process.env, saved);

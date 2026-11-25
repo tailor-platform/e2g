@@ -10,11 +10,12 @@ export interface EnvOptions {
   binFrom?: string;
 }
 
-// the test runner's own variables would make a CLI behave differently locally and in CI
-const dropped = (key: string) => key === "NODE_ENV" || key === "CI" || key.startsWith("VITEST");
+// anything else from the parent (locale, XDG dirs, CI flags, tokens) would make a CLI behave
+// differently on each machine, so only these are passed on; the rest must come through `env`
+const INHERITED = ["TMPDIR", "USER", "LOGNAME"] as const;
 
 function inherited(): Record<string, string | undefined> {
-  return Object.fromEntries(Object.entries(process.env).filter(([key]) => !dropped(key)));
+  return Object.fromEntries(INHERITED.map((key) => [key, process.env[key]]));
 }
 
 function binDirs(from: string): string[] {
