@@ -116,6 +116,33 @@ describe("in a guide run", () => {
     },
   );
 
+  test(
+    "a command line gets the home alias and the replacements",
+    guidePage("command-line", { title: "Command line" }),
+    async ({ terminal, guide, onTestFinished }) => {
+      onTestFinished(({ task }) => {
+        expect(task.meta.e2g?.record?.blocks[0]).toMatchObject({
+          items: [
+            { kind: "command", command: "ls ~/project/build-XXXX", output: "~/project/build-XXXX" },
+            { kind: "command", command: "echo masked", output: "masked" },
+          ],
+        });
+      });
+      await guide.step("Look around.", async () => {
+        const command = `mkdir build-1234 && ls -d ${terminal.options.cwd}/build-1234`;
+        const result = await terminal.run(command);
+        await guide.command(
+          { command: `ls ${terminal.options.cwd}/build-1234`, output: result.output },
+          { replace: [[/build-\d+/g, "build-XXXX"]] },
+        );
+        await guide.command(
+          { command: "echo secret", output: "secret\r\n" },
+          { replace: [["secret", "masked"]] },
+        );
+      });
+    },
+  );
+
   test("a screen that never settles names itself in the error", async ({ terminal, guide }) => {
     const session = await terminal.spawn(
       `node -e "setInterval(() => process.stdout.write('.'), 20)"`,

@@ -6,6 +6,7 @@ import { test as base, type TestContext, type TestOptions } from "vitest";
 import { callerLocation } from "../core/location.js";
 import { real } from "../core/real.js";
 import { checkName, dedent, resolve, textsOf } from "../core/text.js";
+import type { Alias } from "../terminal/alias.js";
 import { renderTerminal } from "../terminal/render.js";
 import type { Replacement } from "../terminal/replace.js";
 import type { Session } from "../terminal/session.js";
@@ -76,6 +77,18 @@ export function guidePage(slug: string, meta: Meta, options: TestOptions = {}): 
   return { ...options, meta: { ...options.meta, [META_KEY]: guide } };
 }
 
+// the command line never passes through the pty, so it gets the aliases and replacements here
+function normalizeCommand(command: string, aliases: Alias[], replace: Replacement[]): string {
+  let text = command;
+  for (const [literal, display] of aliases) if (literal) text = text.split(literal).join(display);
+  for (const [pattern, to] of replace)
+    text = typeof pattern === "string" ? text.split(pattern).join(to) : text.replace(pattern, to);
+  return text;
+}
+
+// the guide fixture does not depend on the terminal fixture, so the terminal leaves its aliases here
+const terminalAliases = new WeakMap<object, Alias[]>();
+
 const located = (location: SourceLocation | undefined) =>
   location ? { location: { ...location, file: real(location.file) } } : {};
 
@@ -84,7 +97,11 @@ interface Recorder {
   finish(): GuideRecordMeta;
 }
 
-function createGuide(locale: Locale | undefined, terminal: GuideTerminalOptions): Recorder {
+function createGuide(
+  locale: Locale | undefined,
+  terminal: GuideTerminalOptions,
+  aliases: () => Alias[],
+): Recorder {
   const owner = {};
   const blocks: Block<TakenShot, null>[] = [];
   // a screen may be named __proto__, which a plain object would take as its prototype
@@ -156,13 +173,15 @@ function createGuide(locale: Locale | undefined, terminal: GuideTerminalOptions)
       if (typeof result?.command !== "string" || typeof result.output !== "string")
         throw new Error("guide.command() needs a string command and output");
       if (!inGuideRun) return;
+      const replace = [...(terminal.replace ?? []), ...(options.replace ?? [])];
       const { text } = await renderTerminal(result.output, {
         cols: terminal.cols,
         rows: terminal.rows,
         theme: terminal.theme,
-        replace: [...(terminal.replace ?? []), ...(options.replace ?? [])],
+        replace,
       });
-      add(step, { kind: "command", command: result.command, output: text });
+      const command = normalizeCommand(result.command, aliases(), replace);
+      add(step, { kind: "command", command, output: text });
     },
 
     async screen(name, session, options) {
@@ -234,14 +253,16 @@ const definitions: Definitions = {
     const home = await realpath(await mkdtemp(join(tmpdir(), "e2g-terminal-")));
     const cwd = join(home, "project");
     await mkdir(cwd);
+    const aliases: Alias[] = [[home, "~"], ...(settings.aliases ?? [])];
     const terminal = new Terminal({
       ...settings,
       home,
       cwd,
       // the test file's own tools, wherever Vitest was started
       binFrom: dirname(task.file.filepath),
-      aliases: [[home, "~"], ...(settings.aliases ?? [])],
+      aliases,
     });
+    terminalAliases.set(task, aliases);
     try {
       await use(terminal);
     } finally {
@@ -250,7 +271,12 @@ const definitions: Definitions = {
     }
   },
   guide: async ({ task, guideLocale, guideTerminal }, use) => {
-    const recorder = createGuide(guideLocale, reviveTerminal(guideTerminal));
+    const settings = reviveTerminal(guideTerminal);
+    const recorder = createGuide(
+      guideLocale,
+      settings,
+      () => terminalAliases.get(task) ?? settings.aliases ?? [],
+    );
     try {
       await use(recorder.guide);
     } finally {

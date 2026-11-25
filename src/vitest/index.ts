@@ -11,13 +11,7 @@ export {
   type GuideFixtures,
   type ScreenOptions,
 } from "./guide.js";
-export {
-  reviveTerminal,
-  serializeTerminal,
-  type GuideTerminalOptions,
-  type SerializedTerminalOptions,
-} from "./settings.js";
-export { META_KEY, type GuideMeta, type GuideRecordMeta } from "./protocol.js";
+export type { GuideTerminalOptions } from "./settings.js";
 export { expect } from "vitest";
 // the types a test file needs, so it imports from one place; Register is augmented on "@tailor-platform/e2g"
 export type {
