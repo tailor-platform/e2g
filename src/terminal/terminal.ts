@@ -84,6 +84,13 @@ const allGone = async (procs: [PtyProcess, Promise<void>][], ms: number): Promis
   return true;
 };
 
+export const UNSUPPORTED_PLATFORM =
+  "@tailor-platform/e2g/terminal runs commands through /bin/sh and supports macOS and Linux only";
+
+export function checkPlatform(platform: NodeJS.Platform = process.platform): void {
+  if (platform === "win32") throw new Error(UNSUPPORTED_PLATFORM);
+}
+
 export class Terminal {
   readonly options: TerminalOptions;
   /** Each live process and the promise that settles when it exits. */
@@ -93,6 +100,7 @@ export class Terminal {
   private disposing: Promise<void> | undefined;
 
   constructor(options: TerminalOptions = {}) {
+    checkPlatform();
     this.options = options;
   }
 
