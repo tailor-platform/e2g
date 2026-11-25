@@ -16,7 +16,7 @@ import { real } from "../../core/real.js";
 import { readSteps } from "./read-steps.js";
 import { runScope, type RunScope } from "./run-scope.js";
 import { sameScreen } from "../../core/same-screen.js";
-import { writeGuides } from "../../core/write.js";
+import { writeGuides, type ShotPath } from "../../core/write.js";
 import type { GuideOutput, PageInfo } from "../../core/types.js";
 
 export type { GuideOutput, PageInfo } from "../../core/types.js";
@@ -28,17 +28,21 @@ export interface GuidesReporterOptions {
   shots: {
     dir: string;
     // oxlint-disable-next-line typescript/no-explicit-any -- any page meta the output understands
-    path?: (
-      page: PageInfo<any>,
-      name: string,
-      variant: string | undefined,
-      ext: "png" | "svg",
-    ) => string;
+    path?: (page: PageInfo<any>, name: string, variant: string | undefined, ext: "png") => string;
     /** Whether two PNGs show the same screen. `false` rewrites a shot whenever its bytes differ. */
     same?: ((a: Buffer, b: Buffer) => boolean) | false;
   };
   manifest: string;
   prune?: boolean;
+}
+
+// browser guides only take PNG screenshots; the shared writer also handles terminal SVGs
+function shotPath(path: GuidesReporterOptions["shots"]["path"]): ShotPath | undefined {
+  if (!path) return undefined;
+  return (page, name, variant, ext) => {
+    if (ext !== "png") throw new Error(`a browser guide has no .${ext} files`);
+    return path(page, name, variant, ext);
+  };
 }
 
 interface GuideTest {
@@ -229,7 +233,7 @@ export default class GuidesReporter implements Reporter {
       results: this.#results,
       scope,
       output: options.output,
-      shots: options.shots,
+      shots: { dir: options.shots.dir, path: shotPath(options.shots.path) },
       manifest: options.manifest,
       prune: options.prune ?? false,
       same: options.shots.same === false ? () => false : (options.shots.same ?? sameScreen),

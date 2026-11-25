@@ -10,7 +10,11 @@ import {
   type Variant,
 } from "@tailor-platform/e2g/playwright";
 import { blocksToMarkdown } from "@tailor-platform/e2g/markdown";
-import type { GuideOutput, Page } from "@tailor-platform/e2g/playwright/reporter";
+import type {
+  GuideOutput,
+  GuidesReporterOptions,
+  Page,
+} from "@tailor-platform/e2g/playwright/reporter";
 import { assertType, type Equal } from "../equal.ts";
 
 assertType<Equal<Locale, "en" | "ja">>();
@@ -75,3 +79,12 @@ defineConfig<GuideOptions>({
 });
 // @ts-expect-error tablet is not a registered variant
 defineConfig<GuideOptions>({ projects: [{ use: { guideLocale: "en", guideVariant: "tablet" } }] });
+
+const shots: GuidesReporterOptions["shots"] = {
+  dir: "shots",
+  path: (page, name, variant, ext) => {
+    assertType<Equal<typeof ext, "png">>();
+    return `${page.slug}/${variant ?? ""}/${name}.${ext}`;
+  },
+};
+void shots;
