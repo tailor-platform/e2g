@@ -1,5 +1,24 @@
 # @tailor-platform/e2g
 
+## 0.4.0
+
+### Minor Changes
+
+- [#15](https://github.com/tailor-platform/e2g/pull/15) [`9c7f648`](https://github.com/tailor-platform/e2g/commit/9c7f648ba8398fdad17bcde10ea40cb8f4187277) Thanks [@jackchuka](https://github.com/jackchuka)! - Guides can now show a screenshot per variant, such as desktop and mobile, or light and dark. Set `use.guideVariant` on a project, give every locale a project for each variant, and register the variants as `Register["variants"]`. The variants of a locale share one page, whose shots carry one image per variant; `blocksToMarkdown(blocks, { media })` renders them as a `<picture>` that shows the image for the reader's screen. A page is written only when every variant passed, and the run fails when the variants differ in steps, paragraphs, shot names, `alt`s or `meta`. A test can read the `guideVariant` fixture to do what only one layout needs inside a `test.step`, which stays out of the page. The README has a recipe.
+
+  Breaking changes:
+
+  - `render(page)` no longer takes an `image()` callback. Each shot has `images: { variant?, src, regions }[]` in place of `regions`, with `src` relative to the page's directory.
+  - `blocksToMarkdown(blocks, options?)` takes options in place of the `image` callback.
+  - `output.path(page)` and `shots.path(page, name, variant)` get the page without `blocks` (`PageInfo`). `shots.path` also gets the shot's variant.
+
+- [#17](https://github.com/tailor-platform/e2g/pull/17) [`dc7e55c`](https://github.com/tailor-platform/e2g/commit/dc7e55c5f2a843a8b221283a5e74fdd2d7f6c96b) Thanks [@jackchuka](https://github.com/jackchuka)! - Guides can now document command-line tools. Under Vitest, `guide.command` shows a command and its output in a step, and `guide.screen` takes the screen of an interactive session as an SVG that is also kept as text. `terminal.run` and `terminal.spawn` run a command in a pseudo-terminal, in a throwaway home directory that shows as `~`. `renderTerminal` turns raw terminal output into text and SVG without Vitest. Set up the guide projects with `guideProjects(locales)` and write the pages with `guidesReporter`, both from `@tailor-platform/e2g/vitest/reporter`; a run that may not include every guide writes nothing. `blocksToMarkdown` renders commands as `console` blocks and screens as images, or as `text` blocks with `{ screen: "text" }`. The pseudo-terminal comes from the optional peer dependency `@lydell/node-pty`. A project with its own extended `test` adds the fixtures with `.extend(guideFixtures)`. The `vitest` entries need Vitest 5 or later. The terminal supports macOS and Linux only. The README has a "CLI guides" section. The Playwright reporter's `shots.path(page, name, variant, ext)` also gets the file extension, always `"png"`.
+
+  Breaking changes:
+
+  - A step's `shots` are now `items`, which also hold commands and screens. A shot is `{ kind: "shot", name, alt, images }`, so filter on `kind` where you read a step's shots.
+  - Both reporters keep generated files under the manifest's directory. A page, screenshot or screen SVG outside it fails the run and nothing is written, so put the manifest in the top folder of the generated files. A manifest entry outside it is never deleted; it is dropped from the manifest with a warning.
+
 ## 0.3.0
 
 ### Minor Changes
