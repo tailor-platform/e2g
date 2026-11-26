@@ -15,7 +15,14 @@ function page(slug: string, shots: string[] = ["menu"], locale = "en"): Collecte
     blocks: shots.map((name) => ({
       kind: "step",
       text: name,
-      shots: [{ name, alt: name, images: [{ regions: [], png: png(`${slug}-${name}`) }] }],
+      items: [
+        {
+          kind: "shot",
+          name,
+          alt: name,
+          images: [{ regions: [], png: png(`${slug}-${name}`) }],
+        },
+      ],
     })),
   };
 }
@@ -25,7 +32,9 @@ const output: GuideOutput<unknown> = {
   render: (p) =>
     p.blocks
       .map((b) =>
-        b.kind === "step" ? b.shots.flatMap((s) => s.images.map((i) => i.src)).join("\n") : b.text,
+        b.kind === "step"
+          ? b.items.flatMap((s) => (s.kind === "shot" ? s.images : []).map((i) => i.src)).join("\n")
+          : b.text,
       )
       .join("\n"),
 };
@@ -40,9 +49,12 @@ function input(over: Partial<PlanInput> = {}): PlanInput {
     incomplete: [],
     errors: [],
     output,
-    shotPath: (p: PageInfo<unknown>, name: string, variant?: string) =>
-      `/site/assets/${p.locale}/${p.slug}/${variant ? `${variant}/` : ""}${name}.png`,
+    shotPath: (p: PageInfo<unknown>, name: string, variant: string | undefined, ext = "png") =>
+      `/site/docs/assets/${p.locale}/${p.slug}/${variant ? `${variant}/` : ""}${name}.${ext}`,
+    foreign: new Set(),
+    caseInsensitive: false,
     manifestDir: "/site/docs",
+    manifestPath: "/site/docs/.guides.json",
     manifest: empty,
     current: () => null,
     same: () => false,
@@ -96,13 +108,13 @@ describe("plan", () => {
   it("writes complete pages and their shots", () => {
     const result = plan(input());
     expect(result.ops).toEqual([
-      { op: "write", path: "/site/docs/en/intro.md", data: "../../assets/en/intro/menu.png" },
-      { op: "write", path: "/site/assets/en/intro/menu.png", data: png("intro-menu") },
+      { op: "write", path: "/site/docs/en/intro.md", data: "../assets/en/intro/menu.png" },
+      { op: "write", path: "/site/docs/assets/en/intro/menu.png", data: png("intro-menu") },
     ]);
     expect(result.manifest).toEqual({
       schemaVersion: 1,
       pages: ["en/intro.md"],
-      shots: ["../assets/en/intro/menu.png"],
+      shots: ["assets/en/intro/menu.png"],
     });
     expect(result.messages).toEqual([]);
   });
@@ -116,17 +128,17 @@ describe("plan", () => {
       }),
     );
     expect(writes(result.ops)).toEqual(["/site/docs/en/intro.md"]);
-    expect(result.manifest?.shots).toEqual(["../assets/en/intro/menu.png"]);
+    expect(result.manifest?.shots).toEqual(["assets/en/intro/menu.png"]);
   });
 
   it("an unchanged page is not rewritten", () => {
     const result = plan(
       input({
         current: (path) =>
-          path.endsWith(".md") ? Buffer.from("../../assets/en/intro/menu.png") : null,
+          path.endsWith(".md") ? Buffer.from("../assets/en/intro/menu.png") : null,
       }),
     );
-    expect(writes(result.ops)).toEqual(["/site/assets/en/intro/menu.png"]);
+    expect(writes(result.ops)).toEqual(["/site/docs/assets/en/intro/menu.png"]);
   });
 
   it("a corrupt committed shot is rewritten", () => {
@@ -138,7 +150,7 @@ describe("plan", () => {
         },
       }),
     );
-    expect(writes(result.ops)).toContain("/site/assets/en/intro/menu.png");
+    expect(writes(result.ops)).toContain("/site/docs/assets/en/intro/menu.png");
   });
 
   it("incomplete pages are not written, others are", () => {
@@ -147,7 +159,7 @@ describe("plan", () => {
     );
     expect(writes(result.ops)).toEqual([
       "/site/docs/en/intro.md",
-      "/site/assets/en/intro/menu.png",
+      "/site/docs/assets/en/intro/menu.png",
     ]);
     expect(result.messages).toEqual(["did not write other/en (a test failed)"]);
   });
@@ -156,14 +168,14 @@ describe("plan", () => {
     const old: Manifest = {
       schemaVersion: 1,
       pages: ["en/gone.md"],
-      shots: ["../assets/en/gone/x.png"],
+      shots: ["assets/en/gone/x.png"],
     };
     const result = plan(input({ manifest: old }));
     expect(deletes(result.ops)).toEqual([]);
     expect(result.manifest).toEqual({
       schemaVersion: 1,
       pages: ["en/gone.md", "en/intro.md"],
-      shots: ["../assets/en/gone/x.png", "../assets/en/intro/menu.png"],
+      shots: ["assets/en/gone/x.png", "assets/en/intro/menu.png"],
     });
   });
 
@@ -171,22 +183,84 @@ describe("plan", () => {
     const old: Manifest = {
       schemaVersion: 1,
       pages: ["en/gone.md", "en/intro.md"],
-      shots: [
-        "../assets/en/gone/x.png",
-        "../assets/en/intro/old.png",
-        "../assets/en/intro/menu.png",
-      ],
+      shots: ["assets/en/gone/x.png", "assets/en/intro/old.png", "assets/en/intro/menu.png"],
     };
     const result = plan(input({ manifest: old, prune: true }));
     expect(deletes(result.ops)).toEqual([
       "/site/docs/en/gone.md",
-      "/site/assets/en/gone/x.png",
-      "/site/assets/en/intro/old.png",
+      "/site/docs/assets/en/gone/x.png",
+      "/site/docs/assets/en/intro/old.png",
     ]);
     expect(result.manifest).toEqual({
       schemaVersion: 1,
       pages: ["en/intro.md"],
-      shots: ["../assets/en/intro/menu.png"],
+      shots: ["assets/en/intro/menu.png"],
+    });
+  });
+
+  it("prune leaves a file another manifest owns and lets go of it", () => {
+    const old: Manifest = {
+      schemaVersion: 1,
+      pages: ["en/intro.md", "en/shared.md"],
+      shots: ["assets/shared.png"],
+    };
+    const result = plan(
+      input({
+        manifest: old,
+        prune: true,
+        foreign: new Set(["/site/docs/en/shared.md", "/site/docs/assets/shared.png"]),
+      }),
+    );
+    expect(deletes(result.ops)).toEqual([]);
+    expect(result.manifest).toEqual({
+      schemaVersion: 1,
+      pages: ["en/intro.md"],
+      shots: ["assets/en/intro/menu.png"],
+    });
+  });
+
+  it("without prune a file another manifest owns leaves this manifest", () => {
+    const old: Manifest = { schemaVersion: 1, pages: ["en/shared.md"], shots: [] };
+    const result = plan(input({ manifest: old, foreign: new Set(["/site/docs/en/shared.md"]) }));
+    expect(deletes(result.ops)).toEqual([]);
+    expect(result.manifest?.pages).toEqual(["en/intro.md"]);
+  });
+
+  describe("another manifest's file under another spelling", () => {
+    const foreign = new Set(["/site/docs/en/Intro.md"]);
+
+    it("blocks the write on a case-insensitive file system", () => {
+      const result = plan(input({ foreign, caseInsensitive: true }));
+      expect(result.ops).toEqual([]);
+      expect(result.errors).toEqual([
+        "wrote no guide pages because page intro/en writes /site/docs/en/intro.md, which another manifest owns",
+      ]);
+    });
+
+    it("is another file on a case-sensitive file system", () => {
+      const result = plan(input({ foreign }));
+      expect(result.errors).toEqual([]);
+      expect(writes(result.ops)).toContain("/site/docs/en/intro.md");
+    });
+
+    it("is neither pruned nor kept on a case-insensitive file system", () => {
+      const old: Manifest = { schemaVersion: 1, pages: ["en/intro.md", "en/shared.md"], shots: [] };
+      const shared = new Set(["/site/docs/en/SHARED.md"]);
+      const pruned = plan(
+        input({ manifest: old, prune: true, foreign: shared, caseInsensitive: true }),
+      );
+      expect(deletes(pruned.ops)).toEqual([]);
+      const kept = plan(input({ manifest: old, foreign: shared, caseInsensitive: true }));
+      expect(kept.manifest?.pages).toEqual(["en/intro.md"]);
+    });
+
+    it("is pruned and kept as this manifest's own on a case-sensitive file system", () => {
+      const old: Manifest = { schemaVersion: 1, pages: ["en/intro.md", "en/shared.md"], shots: [] };
+      const shared = new Set(["/site/docs/en/SHARED.md"]);
+      const pruned = plan(input({ manifest: old, prune: true, foreign: shared }));
+      expect(deletes(pruned.ops)).toEqual(["/site/docs/en/shared.md"]);
+      const kept = plan(input({ manifest: old, foreign: shared }));
+      expect(kept.manifest?.pages).toEqual(["en/intro.md", "en/shared.md"]);
     });
   });
 
@@ -211,7 +285,7 @@ describe("plan", () => {
   });
 
   it("prune with no guide pages deletes nothing", () => {
-    const old: Manifest = { schemaVersion: 1, pages: ["en/gone.md"], shots: ["../assets/x.png"] };
+    const old: Manifest = { schemaVersion: 1, pages: ["en/gone.md"], shots: ["assets/x.png"] };
     const result = plan(input({ prune: true, pages: [], manifest: old }));
     expect(result.ops).toEqual([]);
     expect(result.manifest).toBeNull();
@@ -247,14 +321,15 @@ describe("plan", () => {
     const old: Manifest = {
       schemaVersion: 1,
       pages: ["en/intro.md"],
-      shots: ["../assets/en/intro/menu.png"],
+      shots: ["assets/en/intro/menu.png"],
     };
-    const text = Buffer.from("../../assets/en/intro/Menu.png");
+    const text = Buffer.from("../assets/en/intro/Menu.png");
     const result = plan(
       input({
         prune: true,
         manifest: old,
         pages: [page("intro", ["Menu"])],
+        caseInsensitive: true,
         output: { ...output, path: (p) => `/site/docs/${p.locale}/Intro.md` },
         // a case-insensitive file system returns the old file for either spelling
         current: (path) => (path.toLowerCase().endsWith(".md") ? text : png("intro-Menu")),
@@ -263,9 +338,9 @@ describe("plan", () => {
     );
     expect(result.ops.map((o) => [o.op, o.path])).toEqual([
       ["delete", "/site/docs/en/intro.md"],
-      ["delete", "/site/assets/en/intro/menu.png"],
+      ["delete", "/site/docs/assets/en/intro/menu.png"],
       ["write", "/site/docs/en/Intro.md"],
-      ["write", "/site/assets/en/intro/Menu.png"],
+      ["write", "/site/docs/assets/en/intro/Menu.png"],
     ]);
   });
 
@@ -288,11 +363,12 @@ describe("plan", () => {
         {
           kind: "step",
           text: "menu",
-          shots: [
+          items: [
             {
+              kind: "shot",
               name: "menu",
               alt: "menu",
-              images: [{ src: "../../assets/en/intro/menu.png", regions: [] }],
+              images: [{ src: "../assets/en/intro/menu.png", regions: [] }],
             },
           ],
         },
@@ -308,8 +384,9 @@ describe("plan", () => {
         {
           kind: "step",
           text: "Open",
-          shots: [
+          items: [
             {
+              kind: "shot",
               name: "menu",
               alt: "Menu",
               images: [
@@ -332,17 +409,18 @@ describe("plan", () => {
       {
         op: "write",
         path: "/site/docs/en/intro.md",
-        data: "../../assets/en/intro/desktop/menu.png\n../../assets/en/intro/mobile/menu.png",
+        data: "../assets/en/intro/desktop/menu.png\n../assets/en/intro/mobile/menu.png",
       },
-      { op: "write", path: "/site/assets/en/intro/desktop/menu.png", data: png("d") },
-      { op: "write", path: "/site/assets/en/intro/mobile/menu.png", data: png("m") },
+      { op: "write", path: "/site/docs/assets/en/intro/desktop/menu.png", data: png("d") },
+      { op: "write", path: "/site/docs/assets/en/intro/mobile/menu.png", data: png("m") },
     ]);
     expect(seen[0]!.blocks[0]).toMatchObject({
-      shots: [
+      items: [
         {
+          kind: "shot",
           images: [
-            { variant: "desktop", src: "../../assets/en/intro/desktop/menu.png", regions: [] },
-            { variant: "mobile", src: "../../assets/en/intro/mobile/menu.png", regions: [region] },
+            { variant: "desktop", src: "../assets/en/intro/desktop/menu.png", regions: [] },
+            { variant: "mobile", src: "../assets/en/intro/mobile/menu.png", regions: [region] },
           ],
         },
       ],
@@ -371,8 +449,9 @@ describe("plan", () => {
         {
           kind: "step",
           text: "Open",
-          shots: [
+          items: [
             {
+              kind: "shot",
               name: "menu",
               alt: "Menu",
               images: [
@@ -387,14 +466,121 @@ describe("plan", () => {
     const result = plan(
       input({
         pages: [responsive],
-        shotPath: (p, name) => `/site/assets/${p.locale}/${p.slug}/${name}.png`,
+        shotPath: (p, name) => `/site/docs/assets/${p.locale}/${p.slug}/${name}.png`,
       }),
     );
     expect(result.ops).toEqual([]);
     expect(result.manifest).toBeNull();
     expect(result.errors).toEqual([
-      "wrote no guide pages because page intro/en writes /site/assets/en/intro/menu.png more than once; give each variant's shots their own path",
+      "wrote no guide pages because page intro/en writes /site/docs/assets/en/intro/menu.png more than once; give each variant's shots their own path",
     ]);
+  });
+
+  describe("the manifest's directory", () => {
+    it("refuses a page outside it", () => {
+      const result = plan(input({ output: { ...output, path: (p) => `/site/${p.slug}.md` } }));
+      expect(result.ops).toEqual([]);
+      expect(result.errors).toEqual([
+        "wrote no guide pages because page intro/en writes /site/intro.md, outside /site/docs where the manifest is; put the manifest in the top folder of the generated files",
+      ]);
+    });
+
+    it("refuses a shot outside it", () => {
+      const result = plan(input({ shotPath: (p, name) => `/site/docs/../assets/${name}.png` }));
+      expect(result.ops).toEqual([]);
+      expect(result.errors).toEqual([
+        "wrote no guide pages because page intro/en writes /site/docs/../assets/menu.png, outside /site/docs where the manifest is; put the manifest in the top folder of the generated files",
+      ]);
+    });
+
+    it("refuses a page at the directory itself", () => {
+      const result = plan(input({ output: { ...output, path: () => "/site/docs/en/.." } }));
+      expect(result.ops).toEqual([]);
+      expect(result.errors).toHaveLength(1);
+    });
+
+    it("accepts a path with .. that stays inside", () => {
+      const result = plan(
+        input({ output: { ...output, path: (p) => `/site/docs/x/../${p.locale}/${p.slug}.md` } }),
+      );
+      expect(result.errors).toEqual([]);
+      expect(writes(result.ops)).toContain("/site/docs/x/../en/intro.md");
+    });
+
+    it("compares paths the way a case-insensitive file system does", () => {
+      const result = plan(
+        input({
+          caseInsensitive: true,
+          manifestDir: "/Site/Docs",
+          shotPath: (p, name) => `/site/docs/assets/${name}.png`,
+        }),
+      );
+      expect(result.errors).toEqual([]);
+    });
+
+    it("ignores and keeps manifest entries outside it", () => {
+      const result = plan(
+        input({
+          prune: true,
+          manifest: { schemaVersion: 1, pages: ["../../important.txt", "en/gone.md"], shots: [] },
+        }),
+      );
+      expect(deletes(result.ops)).toEqual(["/site/docs/en/gone.md"]);
+      expect(result.messages).toEqual([
+        "ignored ../../important.txt in /site/docs/.guides.json: it is outside /site/docs",
+      ]);
+      expect(result.manifest?.pages).toEqual(["en/intro.md"]);
+    });
+
+    it("drops entries outside it without pruning", () => {
+      const result = plan(
+        input({ manifest: { schemaVersion: 1, pages: ["..", "en/kept.md"], shots: [] } }),
+      );
+      expect(deletes(result.ops)).toEqual([]);
+      expect(result.messages).toEqual([
+        "ignored .. in /site/docs/.guides.json: it is outside /site/docs",
+      ]);
+      expect(result.manifest?.pages).toEqual(["en/intro.md", "en/kept.md"]);
+    });
+  });
+
+  describe("paths that differ only in case", () => {
+    const twoScreens = (over: Partial<PlanInput>) =>
+      plan(
+        input({
+          pages: [page("intro", ["Home", "home"])],
+          ...over,
+        }),
+      );
+
+    it("are one file on a case-insensitive file system", () => {
+      const result = twoScreens({ caseInsensitive: true });
+      expect(result.ops).toEqual([]);
+      expect(result.errors).toEqual([
+        "wrote no guide pages because page intro/en writes /site/docs/assets/en/intro/Home.png and /site/docs/assets/en/intro/home.png, which are the same file on this file system",
+      ]);
+    });
+
+    it("are two files on a case-sensitive file system", () => {
+      const result = twoScreens({ caseInsensitive: false });
+      expect(result.errors).toEqual([]);
+      expect(writes(result.ops)).toContain("/site/docs/assets/en/intro/Home.png");
+      expect(writes(result.ops)).toContain("/site/docs/assets/en/intro/home.png");
+    });
+
+    it("name both pages when they come from two pages", () => {
+      const result = plan(
+        input({
+          pages: [page("Intro"), page("intro")],
+          caseInsensitive: true,
+          shotPath: (p, name) => `/site/docs/assets/${p.slug}-${name}.png`,
+        }),
+      );
+      expect(result.errors).toEqual([
+        "wrote no guide pages because pages Intro/en and intro/en write /site/docs/en/Intro.md and /site/docs/en/intro.md, which are the same file on this file system",
+        "wrote no guide pages because pages Intro/en and intro/en write /site/docs/assets/Intro-menu.png and /site/docs/assets/intro-menu.png, which are the same file on this file system",
+      ]);
+    });
   });
 
   it("an image's src is relative to the page's directory", () => {
@@ -415,8 +601,10 @@ describe("plan", () => {
     const result = plan(
       input({
         output: { ...output, path: (p) => win32.join("C:\\site\\docs", p.locale, `${p.slug}.md`) },
-        shotPath: (p, name) => win32.join("C:\\site\\assets", p.locale, p.slug, `${name}.png`),
+        shotPath: (p, name) =>
+          win32.join("C:\\site\\docs\\assets", p.locale, p.slug, `${name}.png`),
         manifestDir: "C:\\site\\docs",
+        manifestPath: "C:\\site\\docs\\.guides.json",
         manifest: { schemaVersion: 1, pages: ["en/gone.md"], shots: [] },
         prune: true,
       }),
@@ -424,11 +612,103 @@ describe("plan", () => {
     expect(result.manifest).toEqual({
       schemaVersion: 1,
       pages: ["en/intro.md"],
-      shots: ["../assets/en/intro/menu.png"],
+      shots: ["assets/en/intro/menu.png"],
     });
     expect(result.ops.find((o) => o.op === "write")).toMatchObject({
-      data: "../../assets/en/intro/menu.png",
+      data: "../assets/en/intro/menu.png",
     });
     expect(deletes(result.ops)).toEqual(["C:\\site\\docs\\en\\gone.md"]);
+  });
+
+  describe("screens", () => {
+    const withScreen = (): CollectedPage => ({
+      ...page("intro", []),
+      blocks: [
+        {
+          kind: "step",
+          text: "Choose",
+          items: [
+            { kind: "command", command: "tool run", output: "ok" },
+            {
+              kind: "screen",
+              name: "choose",
+              alt: "choose",
+              text: "ready",
+              image: { svg: Buffer.from("<svg/>") },
+            },
+          ],
+        },
+      ],
+    });
+    const screenOutput: GuideOutput<unknown> = {
+      ...output,
+      render: (p) => JSON.stringify(p.blocks),
+    };
+
+    it("writes a screen svg next to the page", () => {
+      const result = plan(
+        input({
+          pages: [withScreen()],
+          output: {
+            ...screenOutput,
+            path: (p) => `/site/docs/${p.locale}/${p.slug}/index.md`,
+          },
+          shotPath: (p, name, _v, ext) => `/site/docs/${p.locale}/${p.slug}/${name}.${ext}`,
+        }),
+      );
+      expect(result.errors).toEqual([]);
+      expect(writes(result.ops)).toContain("/site/docs/en/intro/choose.svg");
+      const pageOp = result.ops.find((o) => o.op === "write" && o.path.endsWith("index.md"));
+      expect(pageOp).toMatchObject({
+        data: expect.stringContaining('"image":{"src":"choose.svg"}'),
+      });
+      expect(result.manifest?.shots).toEqual(["en/intro/choose.svg"]);
+    });
+
+    it("keeps an svg whose bytes match", () => {
+      const calls: string[] = [];
+      const result = plan(
+        input({
+          pages: [withScreen()],
+          output: screenOutput,
+          current: (path) => (path.endsWith(".svg") ? Buffer.from("<svg/>") : null),
+          same: (...args) => {
+            calls.push(String(args.length));
+            return true;
+          },
+        }),
+      );
+      expect(writes(result.ops).some((path) => path.endsWith(".svg"))).toBe(false);
+      expect(calls).toEqual([]);
+    });
+
+    it("rewrites an svg whose bytes differ without asking same", () => {
+      const result = plan(
+        input({
+          pages: [withScreen()],
+          output: screenOutput,
+          current: (path) => (path.endsWith(".svg") ? Buffer.from("<svg>old</svg>") : null),
+          same: () => {
+            throw new Error("same is for PNGs");
+          },
+        }),
+      );
+      expect(writes(result.ops).some((path) => path.endsWith(".svg"))).toBe(true);
+    });
+
+    it("refuses a path another manifest owns", () => {
+      const result = plan(
+        input({
+          pages: [withScreen()],
+          output: screenOutput,
+          shotPath: (_p, _n, _v, ext) => `/site/docs/x.${ext}`,
+          foreign: new Set(["/site/docs/x.svg"]),
+        }),
+      );
+      expect(result.ops).toEqual([]);
+      expect(result.errors).toEqual([
+        "wrote no guide pages because page intro/en writes /site/docs/x.svg, which another manifest owns",
+      ]);
+    });
   });
 });

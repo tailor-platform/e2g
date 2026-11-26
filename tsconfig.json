@@ -16,10 +16,20 @@
       "@tailor-platform/e2g": ["./src/index.ts"],
       "@tailor-platform/e2g/markdown": ["./src/markdown.ts"],
       "@tailor-platform/e2g/playwright": ["./src/playwright/index.ts"],
-      "@tailor-platform/e2g/playwright/reporter": ["./src/playwright/reporter/index.ts"]
+      "@tailor-platform/e2g/playwright/reporter": ["./src/playwright/reporter/index.ts"],
+      "@tailor-platform/e2g/terminal": ["./src/terminal/index.ts"],
+      "@tailor-platform/e2g/vitest": ["./src/vitest/index.ts"],
+      "@tailor-platform/e2g/vitest/reporter": ["./src/vitest/reporter/index.ts"]
     }
   },
   "include": ["src", "test", "*.ts"],
   // each of these registers its own types, so each is a project of its own
-  "exclude": ["test/types/one", "test/types/two", "test/fixture-project", "test/readme", "examples"]
+  "exclude": [
+    "test/types/one",
+    "test/types/two",
+    "test/fixture-project",
+    "test/vitest-fixture-project",
+    "test/readme",
+    "examples"
+  ]
 }

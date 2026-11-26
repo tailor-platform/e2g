@@ -1,5 +1,15 @@
 import { isDeepStrictEqual } from "node:util";
-import type { Block, GuideRecord, Locale, Page, Region, TakenShot } from "../types.js";
+import {
+  type Block,
+  type GuideRecord,
+  type Item,
+  type Locale,
+  type Page,
+  type Region,
+  type ScreenItem,
+  type ShotItem,
+  type TakenShot,
+} from "../types.js";
 import { relativePath } from "./paths.js";
 
 export interface ExpectedTest {
@@ -36,7 +46,13 @@ export interface CollectedShot {
   images: CollectedImage[];
 }
 
-export type CollectedPage = Omit<Page<unknown>, "blocks"> & { blocks: Block<CollectedShot>[] };
+export interface CollectedSvg {
+  svg: Buffer;
+}
+
+export type CollectedPage = Omit<Page<unknown>, "blocks"> & {
+  blocks: Block<CollectedShot, CollectedSvg>[];
+};
 
 interface Collected {
   pages: CollectedPage[];
@@ -48,7 +64,7 @@ interface Collected {
 interface Taken {
   variant?: string;
   meta: unknown;
-  blocks: Block<TakenShot>[];
+  blocks: Block<TakenShot, null>[];
   shots: Map<string, Buffer>;
 }
 
@@ -72,9 +88,14 @@ function missingLocales(expected: ExpectedTest[], groups: Map<string, ExpectedTe
     .map(([id, locale]) => `${id} (no test of it ran for locale ${locale})`);
 }
 
+// screens share the shots' namespace because both are keyed in TestOutcome.shots
 function shotNames(records: GuideRecord<unknown>[]): string[] {
   return records.flatMap((r) =>
-    r.blocks.flatMap((b) => (b.kind === "step" ? b.shots.map((s) => s.name) : [])),
+    r.blocks.flatMap((b) =>
+      b.kind === "step"
+        ? b.items.flatMap((i) => (i.kind === "shot" || i.kind === "screen" ? [i.name] : []))
+        : [],
+    ),
   );
 }
 
@@ -82,7 +103,7 @@ function duplicates(names: string[]): string[] {
   return [...new Set(names.filter((name, i) => names.indexOf(name) !== i))];
 }
 
-function relativeTo<S>(rootDir: string, block: Block<S>): Block<S> {
+function relativeTo<S, I>(rootDir: string, block: Block<S, I>): Block<S, I> {
   return block.location
     ? {
         ...block,
@@ -115,10 +136,19 @@ function takeVariant(
   if (repeated.length > 0)
     return { error: `page ${id} uses the shot name ${repeated.join(", ")} more than once` };
   const shots = new Map(outcomes.flatMap((o) => [...o!.shots]));
-  if (names.some((name) => !shots.has(name)))
+  const missing = new Set(names.filter((name) => !shots.has(name)));
+  if (missing.size > 0) {
+    const items = records.flatMap((r) =>
+      r.blocks.flatMap((b) => (b.kind === "step" ? b.items : [])),
+    );
+    // only Playwright's PNG shots depend on guideShots; a missing screen SVG has no such switch
+    const shotMissing = items.some((i) => i.kind === "shot" && missing.has(i.name));
     return {
-      incomplete: `${id} (a step has no shot attachment${inVariant(variant)}; run with guideShots on to write it)`,
+      incomplete: shotMissing
+        ? `${id} (a step has no shot attachment${inVariant(variant)}; run with guideShots on to write it)`
+        : `${id} (a screen has no SVG attachment${inVariant(variant)})`,
     };
+  }
   return {
     page: {
       ...(variant === undefined ? {} : { variant }),
@@ -129,18 +159,33 @@ function takeVariant(
   };
 }
 
+function screenNames(blocks: Block<TakenShot, null>[]): string[] {
+  return blocks.flatMap((b) =>
+    b.kind === "step" ? b.items.flatMap((i) => (i.kind === "screen" ? [i.name] : [])) : [],
+  );
+}
+
 // what the variants of a page must share: everything but the images and where the code ran
-const shape = (blocks: Block<TakenShot>[]) =>
+const shape = (blocks: Block<TakenShot, null>[]) =>
   blocks.map((b) =>
     b.kind === "say"
       ? { kind: b.kind, text: b.text }
-      : { kind: b.kind, text: b.text, shots: b.shots.map((s) => ({ name: s.name, alt: s.alt })) },
+      : {
+          kind: b.kind,
+          text: b.text,
+          items: b.items.map((i) => {
+            if (i.kind === "shot") return { kind: i.kind, name: i.name, alt: i.alt };
+            if (i.kind === "screen")
+              return { kind: i.kind, name: i.name, alt: i.alt, text: i.text };
+            return i;
+          }),
+        },
   );
 
 function joinVariants(
   id: string,
   taken: Taken[],
-): Built<Pick<Page<unknown>, "meta"> & { blocks: Block<CollectedShot>[] }> {
+): Built<Pick<Page<unknown>, "meta"> & { blocks: Block<CollectedShot, CollectedSvg>[] }> {
   const [first, ...rest] = taken;
   for (const other of rest) {
     const pair = `variants ${first!.variant} and ${other.variant}`;
@@ -148,23 +193,36 @@ function joinVariants(
       return { error: `page ${id} has differing meta in ${pair}` };
     if (!isDeepStrictEqual(shape(other.blocks), shape(first!.blocks)))
       return { error: `page ${id} has different steps, paragraphs or shots in ${pair}` };
+    const screens = screenNames(first!.blocks);
+    // a screen is one file, so variants that render it differently cannot share it
+    if (screens.some((name) => !first!.shots.get(name)!.equals(other.shots.get(name)!)))
+      return { error: `page ${id} has different steps, paragraphs or shots in ${pair}` };
   }
-  const blocks = first!.blocks.map((block, i): Block<CollectedShot> => {
+  const blocks = first!.blocks.map((block, i): Block<CollectedShot, CollectedSvg> => {
     if (block.kind === "say") return block;
     return {
       ...block,
-      shots: block.shots.map((shot, j) => ({
-        name: shot.name,
-        alt: shot.alt,
-        images: taken.map((t) => {
-          const own = t.blocks[i] as Extract<Block<TakenShot>, { kind: "step" }>;
+      items: block.items.map((item, j): Item<CollectedShot, CollectedSvg> => {
+        if (item.kind === "command") return item;
+        if (item.kind === "screen")
           return {
-            ...(t.variant === undefined ? {} : { variant: t.variant }),
-            regions: own.shots[j]!.regions,
-            png: t.shots.get(shot.name)!,
-          };
-        }),
-      })),
+            ...item,
+            image: { svg: first!.shots.get(item.name)! },
+          } satisfies ScreenItem<CollectedSvg>;
+        return {
+          kind: "shot",
+          name: item.name,
+          alt: item.alt,
+          images: taken.map((t) => {
+            const own = t.blocks[i] as Extract<Block<TakenShot, null>, { kind: "step" }>;
+            return {
+              ...(t.variant === undefined ? {} : { variant: t.variant }),
+              regions: (own.items[j] as ShotItem<TakenShot>).regions,
+              png: t.shots.get(item.name)!,
+            };
+          }),
+        };
+      }),
     };
   });
   return { page: { meta: first!.meta, blocks } };

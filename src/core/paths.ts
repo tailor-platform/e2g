@@ -14,3 +14,10 @@ export function resolvePath(dir: string, relative: string): string {
 export function directoryOf(path: string): string {
   return flavor(path).dirname(path);
 }
+
+/** Whether `path` is below `root`; `root` itself is not, since a file cannot be its own folder. */
+export function isInside(root: string, path: string): boolean {
+  const p = flavor(root);
+  const rel = p.relative(root, path);
+  return rel !== "" && rel !== ".." && !rel.startsWith(`..${p.sep}`) && !p.isAbsolute(rel);
+}

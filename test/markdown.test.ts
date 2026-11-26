@@ -10,7 +10,7 @@ const shot = (name: string, alt = name): Shot => ({
 const step = (text: string, name: string, alt = name): Block => ({
   kind: "step",
   text,
-  shots: [shot(name, alt)],
+  items: [{ kind: "shot", ...shot(name, alt) }],
 });
 const say = (text: string): Block => ({ kind: "say", text });
 
@@ -78,7 +78,14 @@ describe("blocksToMarkdown", () => {
     const linked: Block = {
       kind: "step",
       text: "Go.",
-      shots: [{ name: "01-a", alt: "x", images: [{ src: "../img/01-a.png", regions: [] }] }],
+      items: [
+        {
+          kind: "shot",
+          name: "01-a",
+          alt: "x",
+          images: [{ src: "../img/01-a.png", regions: [] }],
+        },
+      ],
     };
     expect(blocksToMarkdown([linked])).toContain("![x](../img/01-a.png)");
   });
@@ -86,7 +93,7 @@ describe("blocksToMarkdown", () => {
   it("a step without a shot is only its numbered text", () => {
     const out = blocksToMarkdown([
       step("Open it.", "a", "A"),
-      { kind: "step", text: "Wait.", shots: [] },
+      { kind: "step", text: "Wait.", items: [] },
       step("Click.", "c"),
     ]);
     expect(out).toBe(
@@ -96,8 +103,15 @@ describe("blocksToMarkdown", () => {
 
   it("a step with several shots lists their images in order", () => {
     const out = blocksToMarkdown([
-      { kind: "step", text: "Open it.", shots: [shot("a", "A"), shot("b", "B")] },
-      { kind: "step", text: "Wait.", shots: [] },
+      {
+        kind: "step",
+        text: "Open it.",
+        items: [
+          { kind: "shot", ...shot("a", "A") },
+          { kind: "shot", ...shot("b", "B") },
+        ],
+      },
+      { kind: "step", text: "Wait.", items: [] },
     ]);
     expect(out).toBe("1. Open it.\n\n   ![A](img/a.png)\n\n   ![B](img/b.png)\n\n2. Wait.\n");
   });
@@ -108,7 +122,7 @@ describe("blocksToMarkdown", () => {
 
   it("a shot in several variants is a picture whose variant without media is the img", () => {
     const out = blocksToMarkdown(
-      [{ kind: "step", text: "Open it.", shots: [responsive("a", "A")] }],
+      [{ kind: "step", text: "Open it.", items: [{ kind: "shot", ...responsive("a", "A") }] }],
       MEDIA,
     );
     expect(out).toBe(
@@ -134,9 +148,12 @@ describe("blocksToMarkdown", () => {
         { variant: "tablet", src: "t.png", regions: [] },
       ],
     };
-    const out = blocksToMarkdown([{ kind: "step", text: "Go.", shots: [shot] }], {
-      media: { tablet: "(max-width: 1024px)", phone: "(max-width: 640px)" },
-    });
+    const out = blocksToMarkdown(
+      [{ kind: "step", text: "Go.", items: [{ kind: "shot", ...shot }] }],
+      {
+        media: { tablet: "(max-width: 1024px)", phone: "(max-width: 640px)" },
+      },
+    );
     expect(out).toContain(
       '<source media="(max-width: 640px)" srcset="p.png">\n     <source media="(max-width: 1024px)" srcset="t.png">\n     <img src="d.png" alt="A">',
     );
@@ -151,7 +168,10 @@ describe("blocksToMarkdown", () => {
         { variant: "mobile", src: 'm".png', regions: [] },
       ],
     };
-    const out = blocksToMarkdown([{ kind: "step", text: "Go.", shots: [shot] }], MEDIA);
+    const out = blocksToMarkdown(
+      [{ kind: "step", text: "Go.", items: [{ kind: "shot", ...shot }] }],
+      MEDIA,
+    );
     expect(out).toContain('srcset="m&quot;.png"');
     expect(out).toContain(
       '<img src="a&amp;b.png" alt="The &quot;Save&quot; &amp; &lt;Close> buttons">',
@@ -159,7 +179,9 @@ describe("blocksToMarkdown", () => {
   });
 
   it("a shot in several variants needs exactly one variant without media", () => {
-    const blocks: Block[] = [{ kind: "step", text: "Go.", shots: [responsive("a")] }];
+    const blocks: Block[] = [
+      { kind: "step", text: "Go.", items: [{ kind: "shot", ...responsive("a") }] },
+    ];
     expect(() => blocksToMarkdown(blocks)).toThrow(
       'shot "a" has images for variants desktop, mobile; give media for all but one of them',
     );
@@ -170,5 +192,82 @@ describe("blocksToMarkdown", () => {
     ).toThrow(
       'shot "a" has images for variants desktop, mobile; give media for all but one of them',
     );
+  });
+
+  describe("terminal items", () => {
+    const command = (text: string, command: string, output: string): Block => ({
+      kind: "step",
+      text,
+      items: [{ kind: "command", command, output }],
+    });
+    const screen = (): Block => ({
+      kind: "step",
+      text: "Pick one.",
+      items: [
+        {
+          kind: "screen",
+          name: "picker",
+          alt: "The picker",
+          text: "Pick:\n> a",
+          image: { src: "img/picker.svg" },
+        },
+      ],
+    });
+
+    it("renders a command as a console block inside the step", () => {
+      expect(
+        blocksToMarkdown([command("Check it.", "mycli --version", "mycli 1.0.0\n2 lines")]),
+      ).toBe(
+        "1. Check it.\n\n   ```console\n   $ mycli --version\n   mycli 1.0.0\n   2 lines\n   ```\n",
+      );
+    });
+
+    it("renders a screen as an image", () => {
+      expect(blocksToMarkdown([screen()])).toBe(
+        "1. Pick one.\n\n   ![The picker](img/picker.svg)\n",
+      );
+      expect(blocksToMarkdown([screen()], { screen: "image" })).toBe(blocksToMarkdown([screen()]));
+    });
+
+    it("renders a screen as text", () => {
+      expect(blocksToMarkdown([screen()], { screen: "text" })).toBe(
+        "1. Pick one.\n\n   ```text\n   Pick:\n   > a\n   ```\n",
+      );
+    });
+
+    it("fences a command whose output has a fence", () => {
+      expect(blocksToMarkdown([command("Show.", "cat a.md", "```ts\nx\n```")])).toBe(
+        "1. Show.\n\n   ````console\n   $ cat a.md\n   ```ts\n   x\n   ```\n   ````\n",
+      );
+    });
+
+    it("fences a text screen that has a fence", () => {
+      const block: Block = {
+        kind: "step",
+        text: "Look.",
+        items: [{ kind: "screen", name: "s", alt: "s", text: "`````\nx", image: { src: "s.svg" } }],
+      };
+      expect(blocksToMarkdown([block], { screen: "text" })).toBe(
+        "1. Look.\n\n   ``````text\n   `````\n   x\n   ``````\n",
+      );
+    });
+
+    it("indents every line of a multi-line command", () => {
+      expect(blocksToMarkdown([command("Run.", "echo a \\\n  b", "a b")])).toBe(
+        "1. Run.\n\n   ```console\n   $ echo a \\\n     b\n   a b\n   ```\n",
+      );
+    });
+
+    it("fences a command with a fence on a later line", () => {
+      expect(blocksToMarkdown([command("Write.", "cat <<'EOF'\n```\nEOF", "```")])).toBe(
+        "1. Write.\n\n   ````console\n   $ cat <<'EOF'\n   ```\n   EOF\n   ```\n   ````\n",
+      );
+    });
+
+    it("a command with no output", () => {
+      expect(blocksToMarkdown([command("Make it.", "mkdir demo", "")])).toBe(
+        "1. Make it.\n\n   ```console\n   $ mkdir demo\n   ```\n",
+      );
+    });
   });
 });

@@ -1,4 +1,4 @@
-import { dirname, join, resolve } from "node:path";
+import { dirname } from "node:path";
 import type {
   FullConfig,
   FullProject,
@@ -11,13 +11,12 @@ import type {
 } from "@playwright/test/reporter";
 import { ANNOTATION } from "../protocol.js";
 import type { GuideOptions } from "../use.js";
-import { collectPages, type ExpectedTest, type TestOutcome } from "../../core/collect.js";
+import type { ExpectedTest, TestOutcome } from "../../core/collect.js";
 import { real } from "../../core/real.js";
-import { commit, EMPTY_MANIFEST, readFile, readManifest } from "../../core/io.js";
 import { readSteps } from "./read-steps.js";
-import { plan } from "../../core/plan.js";
 import { runScope, type RunScope } from "./run-scope.js";
 import { sameScreen } from "../../core/same-screen.js";
+import { writeGuides, type ShotPath } from "../../core/write.js";
 import type { GuideOutput, PageInfo } from "../../core/types.js";
 
 export type { GuideOutput, PageInfo } from "../../core/types.js";
@@ -29,12 +28,21 @@ export interface GuidesReporterOptions {
   shots: {
     dir: string;
     // oxlint-disable-next-line typescript/no-explicit-any -- any page meta the output understands
-    path?: (page: PageInfo<any>, name: string, variant: string | undefined) => string;
+    path?: (page: PageInfo<any>, name: string, variant: string | undefined, ext: "png") => string;
     /** Whether two PNGs show the same screen. `false` rewrites a shot whenever its bytes differ. */
     same?: ((a: Buffer, b: Buffer) => boolean) | false;
   };
   manifest: string;
   prune?: boolean;
+}
+
+// browser guides only take PNG screenshots; the shared writer also handles terminal SVGs
+function shotPath(path: GuidesReporterOptions["shots"]["path"]): ShotPath | undefined {
+  if (!path) return undefined;
+  return (page, name, variant, ext) => {
+    if (ext !== "png") throw new Error(`a browser guide has no .${ext} files`);
+    return path(page, name, variant, ext);
+  };
 }
 
 interface GuideTest {
@@ -218,57 +226,18 @@ export default class GuidesReporter implements Reporter {
         ? { partial: true, reason: "Playwright reported an error outside the tests" }
         : testScope;
     const options = this.#options;
-    const base = config.configFile ? dirname(config.configFile) : config.rootDir;
-    const at = (path: string) => resolve(base, path);
-    const shotsDir = at(options.shots.dir);
-    const manifestPath = at(options.manifest);
-    const manifestDir = dirname(manifestPath);
-    const same = options.shots.same === false ? () => false : (options.shots.same ?? sameScreen);
-    const manifest = readManifest(manifestPath);
-    const previous = manifest ?? EMPTY_MANIFEST;
-    if (!manifest)
-      log(`left ${manifestPath} as it is because it could not be read; fix or delete it`);
-    const { pages, incomplete, errors } = collectPages(
+    return writeGuides({
+      base: config.configFile ? dirname(config.configFile) : config.rootDir,
+      rootDir: real(config.rootDir),
       expected,
-      this.#results,
-      real(config.rootDir),
-    );
-    const result = plan({
+      results: this.#results,
       scope,
-      prune: manifest !== null && (options.prune ?? false),
-      pages,
-      incomplete,
-      errors,
-      output: {
-        path: (page) => at(options.output.path(page)),
-        render: (page) => options.output.render(page),
-      },
-      shotPath: (page, name, variant) =>
-        options.shots.path
-          ? at(options.shots.path(page, name, variant))
-          : join(
-              shotsDir,
-              page.locale,
-              page.slug,
-              ...(variant === undefined ? [] : [variant]),
-              `${name}.png`,
-            ),
-      manifestDir,
-      manifest: previous,
-      current: readFile,
-      same,
+      output: options.output,
+      shots: { dir: options.shots.dir, path: shotPath(options.shots.path) },
+      manifest: options.manifest,
+      prune: options.prune ?? false,
+      same: options.shots.same === false ? () => false : (options.shots.same ?? sameScreen),
+      log,
     });
-    for (const m of [...result.errors, ...result.messages]) log(m);
-    commit({
-      ops: result.ops,
-      roots: [shotsDir, manifestDir],
-      manifestPath: manifest ? manifestPath : null,
-      previous,
-      manifest: result.manifest,
-    });
-    const written = result.ops.filter((op) => op.op === "write").length;
-    const deleted = result.ops.length - written;
-    if (result.ops.length > 0) log(`wrote ${written} and deleted ${deleted} guide files`);
-    return result.errors.length > 0;
   }
 }

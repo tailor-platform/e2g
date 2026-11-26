@@ -3,12 +3,14 @@
   "version": "0.3.0",
   "description": "Guides generated from your e2e tests",
   "keywords": [
+    "cli",
     "documentation",
     "e2e",
     "guides",
     "playwright",
     "reporter",
-    "screenshots"
+    "screenshots",
+    "terminal"
   ],
   "homepage": "https://github.com/tailor-platform/e2g#readme",
   "bugs": {
@@ -41,6 +43,18 @@
     "./playwright/reporter": {
       "types": "./dist/playwright/reporter/index.d.ts",
       "default": "./dist/playwright/reporter/index.js"
+    },
+    "./terminal": {
+      "types": "./dist/terminal/index.d.ts",
+      "default": "./dist/terminal/index.js"
+    },
+    "./vitest": {
+      "types": "./dist/vitest/index.d.ts",
+      "default": "./dist/vitest/index.js"
+    },
+    "./vitest/reporter": {
+      "types": "./dist/vitest/reporter/index.d.ts",
+      "default": "./dist/vitest/reporter/index.js"
     }
   },
   "publishConfig": {
@@ -52,19 +66,22 @@
     "test": "vitest run",
     "test:browser": "playwright test",
     "example:tour": "pnpm build && playwright test -c examples/tour",
-    "typecheck": "tsc -p . && tsc -p test/types/one && tsc -p test/types/two && tsc -p test/fixture-project.tsconfig.json && tsc -p test/readme && tsc -p examples/tour",
+    "example:cli": "pnpm build && vitest run -c examples/cli/vitest.config.ts",
+    "typecheck": "tsc -p . && tsc -p test/types/one && tsc -p test/types/two && tsc -p test/fixture-project.tsconfig.json && tsc -p test/vitest-fixture-project.tsconfig.json && tsc -p test/readme && tsc -p test/readme/cli && tsc -p examples/tour && tsc -p examples/cli",
     "lint": "oxlint --deny-warnings && oxfmt --check",
     "check:pkg": "publint && attw --pack . --profile esm-only",
     "changeset": "changeset",
     "release": "pnpm build && changeset publish"
   },
   "dependencies": {
+    "@xterm/headless": "6.0.0",
     "pngjs": "7.0.0"
   },
   "devDependencies": {
     "@arethetypeswrong/cli": "0.18.5",
     "@changesets/changelog-github": "1.0.1",
     "@changesets/cli": "3.0.3",
+    "@lydell/node-pty": "1.2.0-beta.18",
     "@playwright/test": "1.64.1",
     "@types/node": "26.6.6",
     "@types/pngjs": "6.0.5",
@@ -76,10 +93,18 @@
     "yaml": "2.9.1"
   },
   "peerDependencies": {
-    "@playwright/test": ">=1.64"
+    "@lydell/node-pty": ">=1.2.0-beta.18",
+    "@playwright/test": ">=1.64",
+    "vitest": ">=5.0"
   },
   "peerDependenciesMeta": {
+    "@lydell/node-pty": {
+      "optional": true
+    },
     "@playwright/test": {
+      "optional": true
+    },
+    "vitest": {
       "optional": true
     }
   },
