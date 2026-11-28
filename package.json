@@ -89,7 +89,7 @@
     "oxlint": "1.88.0",
     "publint": "0.3.25",
     "typescript": "7.0.2",
-    "vitest": "5.0.5",
+    "vitest": "5.1.2",
     "yaml": "2.9.1"
   },
   "peerDependencies": {
